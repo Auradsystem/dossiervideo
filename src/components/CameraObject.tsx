@@ -1,5 +1,5 @@
 import React from 'react';
-import { Group, Circle, Wedge, Text, Rect, Transformer, Path } from 'react-konva';
+import { Group, Circle, Wedge, Text, Transformer, Path } from 'react-konva';
 import { Camera, cameraIcons } from '../types/Camera';
 import { useAppContext } from '../context/AppContext';
 

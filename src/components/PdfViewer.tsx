@@ -28,6 +28,7 @@ const PdfViewer: React.FC = () => {
   
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<any>(null);
 
   // Load PDF document when file changes
   useEffect(() => {
@@ -192,6 +193,7 @@ const PdfViewer: React.FC = () => {
                 <canvas ref={canvasRef} style={{ display: 'block' }} />
                 {pdfPageRendered && (
                   <Stage 
+                    ref={stageRef}
                     width={stageSize.width} 
                     height={stageSize.height}
                     style={{ 

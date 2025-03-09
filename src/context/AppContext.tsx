@@ -149,15 +149,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Draw cameras with the same orientation as in the viewer
       cameras.forEach(camera => {
         ctx.save();
+        
+        // Translate to camera position
         ctx.translate(camera.x, camera.y);
         
         // Draw view angle in red with proper orientation
+        // Start with a rotation of -90 degrees to align with the default orientation
+        // Then apply the camera's specific rotation
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.arc(0, 0, camera.viewDistance, 
-                (Math.PI * (-camera.angle / 2)) / 180, 
-                (Math.PI * (camera.angle / 2)) / 180, 
-                false);
+        
+        // Calculate start and end angles for the arc
+        // Convert from degrees to radians and adjust for orientation
+        const startAngle = (-camera.angle / 2) * (Math.PI / 180);
+        const endAngle = (camera.angle / 2) * (Math.PI / 180);
+        
+        ctx.arc(0, 0, camera.viewDistance, startAngle, endAngle, false);
         ctx.closePath();
         ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
         ctx.fill();
@@ -186,7 +193,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
       
       // Get the image data from the canvas
-      const imageData = tempCanvas.toDataURL('image/png');
+      const imageData = tempCanvas.toDataURL('image/png', 1.0);
       
       // Create a new PDF with the same dimensions as the canvas
       // Determine orientation based on width/height ratio
@@ -196,18 +203,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const pdf = new jsPDF({
         orientation: orientation,
         unit: 'px',
-        format: [tempCanvas.width, tempCanvas.height]
+        format: [tempCanvas.width, tempCanvas.height],
+        hotfixes: ['px_scaling']
       });
       
+      // Calculate the PDF dimensions in points (72 points per inch)
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
       // Add the image to the PDF, preserving the exact dimensions and orientation
-      pdf.addImage(
-        imageData, 
-        'PNG', 
-        0, 
-        0, 
-        tempCanvas.width, 
-        tempCanvas.height
-      );
+      pdf.addImage({
+        imageData: imageData,
+        format: 'PNG',
+        x: 0,
+        y: 0,
+        width: pdfWidth,
+        height: pdfHeight,
+        compression: 'NONE'
+      });
       
       // Save the PDF
       pdf.save(`plancam_export_${new Date().toISOString().slice(0, 10)}.pdf`);
