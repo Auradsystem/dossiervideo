@@ -119,7 +119,7 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
         onDragEnd={handleDragEnd}
         onTransformEnd={handleTransformEnd}
       >
-        {/* Camera view angle - maintenant en rouge et avec rotation */}
+        {/* Camera view angle - avec rotation correcte */}
         <Wedge
           ref={wedgeRef}
           radius={camera.viewDistance}

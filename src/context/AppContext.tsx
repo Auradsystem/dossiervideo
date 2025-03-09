@@ -238,21 +238,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       // Dessiner les caméras de cette page
       pageCamerasList.forEach(camera => {
+        // Sauvegarde du contexte avant transformation
         ctx.save();
         
-        // Translate to camera position
+        // Déplacement à la position de la caméra
         ctx.translate(camera.x, camera.y);
         
-        // Draw view angle in red with proper orientation
+        // Dessiner le champ de vision avec la bonne orientation
         ctx.beginPath();
         
-        // Calculer l'angle de départ et de fin en tenant compte de la rotation de la caméra
+        // Récupérer la rotation exacte de la caméra
         const cameraRotation = camera.rotation || 0;
         const halfAngle = camera.angle / 2;
         
-        // Convertir les angles en radians
+        // Calculer les angles de début et de fin en radians
+        // Correction importante: utiliser la rotation exacte de la caméra
         const startAngle = ((270 - halfAngle + cameraRotation) % 360) * Math.PI / 180;
         const endAngle = ((270 + halfAngle + cameraRotation) % 360) * Math.PI / 180;
+        
+        console.log(`Caméra ${camera.id}: rotation=${cameraRotation}, startAngle=${startAngle * 180 / Math.PI}°, endAngle=${endAngle * 180 / Math.PI}°`);
         
         // Dessiner l'arc de cercle représentant le champ de vision
         ctx.moveTo(0, 0);
@@ -264,11 +268,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
         ctx.stroke();
         
-        // Draw camera icon
+        // Dessiner l'icône de la caméra
         ctx.beginPath();
         ctx.arc(0, 0, camera.width / 2, 0, Math.PI * 2);
         
-        // Use the color corresponding to the camera type
+        // Utiliser la couleur correspondant au type de caméra
         const iconData = cameraIcons[camera.type] || cameraIcons.dome;
         ctx.fillStyle = iconData.color;
         
@@ -276,20 +280,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ctx.strokeStyle = '#000';
         ctx.stroke();
         
-        // Draw camera name
+        // Dessiner le nom de la caméra
         ctx.fillStyle = '#000';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
         ctx.fillText(camera.name, 0, -camera.height / 2 - 5);
         
+        // Restauration du contexte après dessin
         ctx.restore();
       });
       
-      // Determine orientation based on width/height ratio
+      // Déterminer l'orientation en fonction du ratio largeur/hauteur
       const orientation = tempCanvas.width > tempCanvas.height ? 'landscape' : 'portrait';
       console.log(`Orientation détectée: ${orientation}`);
       
-      // Create PDF with appropriate dimensions
+      // Créer le PDF avec les dimensions appropriées
       const pdf = new jsPDF({
         orientation: orientation,
         unit: 'px',
@@ -297,14 +302,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         hotfixes: ['px_scaling']
       });
       
-      // Calculate the PDF dimensions in points
+      // Calculer les dimensions du PDF en points
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      // Get the image data from the canvas with high quality
+      // Obtenir les données d'image du canvas avec une haute qualité
       const imageData = tempCanvas.toDataURL('image/jpeg', 1.0);
       
-      // Add the image to the PDF, preserving the exact dimensions and orientation
+      // Ajouter l'image au PDF, en préservant les dimensions et l'orientation exactes
       pdf.addImage({
         imageData: imageData,
         format: 'JPEG',
@@ -315,7 +320,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         compression: 'NONE'
       });
       
-      // Return the PDF as a blob
+      // Retourner le PDF sous forme de blob
       const pdfBlob = pdf.output('blob');
       console.log(`PDF généré avec succès pour la page ${pageNumber}`);
       return pdfBlob;
