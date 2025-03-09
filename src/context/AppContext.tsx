@@ -3,10 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
 
-interface PageCameras {
-  [pageNumber: number]: Camera[];
-}
-
 interface AppContextType {
   pdfFile: File | null;
   setPdfFile: (file: File | null) => void;
@@ -37,15 +33,13 @@ interface AppContextType {
   setNextCameraNumber: (num: number) => void;
   selectedIconType: string;
   setSelectedIconType: (type: string) => void;
-  pageCameras: PageCameras;
-  clearCamerasOnCurrentPage: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [pageCameras, setPageCameras] = useState<PageCameras>({});
+  const [cameras, setCameras] = useState<Camera[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
   const [scale, setScale] = useState<number>(1);
   const [page, setPage] = useState<number>(1);
@@ -56,17 +50,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedIconType, setSelectedIconType] = useState<string>("hikvision");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
-
-  // Dérivez les caméras de la page actuelle à partir de pageCameras
-  const cameras = pageCameras[page] || [];
-
-  // Réinitialiser les caméras lors du changement de PDF
-  useEffect(() => {
-    if (pdfFile === null) {
-      setPageCameras({});
-      setSelectedCamera(null);
-    }
-  }, [pdfFile]);
 
   // Check for existing authentication on mount
   useEffect(() => {
@@ -84,11 +67,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     };
   }, [previewUrl]);
-
-  // Désélectionner la caméra lors du changement de page
-  useEffect(() => {
-    setSelectedCamera(null);
-  }, [page]);
 
   const login = (username: string, password: string): boolean => {
     if (username === 'xcel' && password === 'video') {
@@ -121,16 +99,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       opacity: 0.9, // Plus opaque par défaut
       type: selectedIconType as CameraType, // Utiliser le type d'icône sélectionné
       iconPath: type === 'custom' ? cameraIcons[selectedIconType]?.path : undefined,
-      rotation: 0, // Ajout d'une propriété de rotation explicite
-      page: page // Stocker la page à laquelle appartient cette caméra
+      rotation: 0 // Ajout d'une propriété de rotation explicite
     };
     
-    // Ajouter la caméra à la page actuelle
-    setPageCameras(prev => ({
-      ...prev,
-      [page]: [...(prev[page] || []), newCamera]
-    }));
-    
+    setCameras([...cameras, newCamera]);
     setSelectedCamera(newCamera.id);
     
     // Increment the next camera number
@@ -138,66 +110,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateCamera = (id: string, updates: Partial<Camera>) => {
-    setPageCameras(prev => {
-      const updatedPageCameras = { ...prev };
-      
-      // Mettre à jour la caméra dans la page actuelle
-      if (updatedPageCameras[page]) {
-        updatedPageCameras[page] = updatedPageCameras[page].map(camera => {
-          if (camera.id === id) {
-            // If the name is being updated, check if it follows the pattern
-            if (updates.name && updates.name !== camera.name) {
-              const nameMatch = updates.name.match(/^(.+?)(\d+)$/);
-              if (nameMatch) {
-                const newPattern = nameMatch[1];
-                const newNumber = parseInt(nameMatch[2], 10);
-                
-                // Update the pattern and next number if this is the highest number
-                if (newPattern !== namingPattern) {
-                  setNamingPattern(newPattern);
-                }
-                
-                if (newNumber >= nextCameraNumber) {
-                  setNextCameraNumber(newNumber + 1);
-                }
-              }
+    setCameras(cameras.map(camera => {
+      if (camera.id === id) {
+        // If the name is being updated, check if it follows the pattern
+        if (updates.name && updates.name !== camera.name) {
+          const nameMatch = updates.name.match(/^(.+?)(\d+)$/);
+          if (nameMatch) {
+            const newPattern = nameMatch[1];
+            const newNumber = parseInt(nameMatch[2], 10);
+            
+            // Update the pattern and next number if this is the highest number
+            if (newPattern !== namingPattern) {
+              setNamingPattern(newPattern);
             }
             
-            return { ...camera, ...updates };
+            if (newNumber >= nextCameraNumber) {
+              setNextCameraNumber(newNumber + 1);
+            }
           }
-          return camera;
-        });
+        }
+        
+        return { ...camera, ...updates };
       }
-      
-      return updatedPageCameras;
-    });
+      return camera;
+    }));
   };
 
   const deleteCamera = (id: string) => {
-    setPageCameras(prev => {
-      const updatedPageCameras = { ...prev };
-      
-      // Supprimer la caméra de la page actuelle
-      if (updatedPageCameras[page]) {
-        updatedPageCameras[page] = updatedPageCameras[page].filter(camera => camera.id !== id);
-      }
-      
-      return updatedPageCameras;
-    });
-    
+    setCameras(cameras.filter(camera => camera.id !== id));
     if (selectedCamera === id) {
       setSelectedCamera(null);
     }
-  };
-
-  // Fonction pour effacer toutes les caméras de la page actuelle
-  const clearCamerasOnCurrentPage = () => {
-    setPageCameras(prev => {
-      const updatedPageCameras = { ...prev };
-      updatedPageCameras[page] = [];
-      return updatedPageCameras;
-    });
-    setSelectedCamera(null);
   };
 
   // Fonction commune pour générer le PDF
@@ -221,12 +164,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Draw the PDF exactly as it appears in the viewer
       ctx.drawImage(pdfCanvas, 0, 0);
       
-      // Dessiner uniquement les caméras de la page actuelle
-      const currentPageCameras = pageCameras[page] || [];
-      
       // Nouvelle approche: utiliser les transformations du canvas pour dessiner les caméras
       // avec leur orientation exacte comme dans l'interface
-      currentPageCameras.forEach(camera => {
+      cameras.forEach(camera => {
         ctx.save();
         
         // Translate to camera position
@@ -337,7 +277,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Créer un lien temporaire pour télécharger le fichier
       const link = document.createElement('a');
       link.href = url;
-      link.download = `plancam_export_page${page}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      link.download = `plancam_export_${new Date().toISOString().slice(0, 10)}.pdf`;
       link.click();
       
       // Nettoyer l'URL
@@ -377,9 +317,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       nextCameraNumber,
       setNextCameraNumber,
       selectedIconType,
-      setSelectedIconType,
-      pageCameras,
-      clearCamerasOnCurrentPage
+      setSelectedIconType
     }}>
       {children}
     </AppContext.Provider>

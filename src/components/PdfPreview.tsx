@@ -9,7 +9,7 @@ interface PdfPreviewProps {
 }
 
 const PdfPreview: React.FC<PdfPreviewProps> = ({ open, onClose }) => {
-  const { previewUrl, exportPdf, page } = useAppContext();
+  const { previewUrl, exportPdf } = useAppContext();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Ajuster la taille de l'iframe au contenu
@@ -65,7 +65,7 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({ open, onClose }) => {
         borderBottom: '1px solid',
         borderColor: 'divider'
       }}>
-        <Typography variant="h6">Aperçu avant impression - Page {page}</Typography>
+        <Typography variant="h6">Aperçu avant impression</Typography>
         <Box>
           <IconButton onClick={handlePrint} title="Imprimer">
             <Printer size={20} />
