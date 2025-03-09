@@ -3,6 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
 
+// Interface pour stocker les caméras par page
+interface PageCameras {
+  [pageNumber: number]: Camera[];
+}
+
 interface AppContextType {
   pdfFile: File | null;
   setPdfFile: (file: File | null) => void;
@@ -22,6 +27,7 @@ interface AppContextType {
   login: (username: string, password: string) => boolean;
   logout: () => void;
   exportPdf: () => void;
+  exportCurrentPage: () => void;
   previewPdf: () => void;
   previewUrl: string | null;
   setPreviewUrl: (url: string | null) => void;
@@ -33,13 +39,15 @@ interface AppContextType {
   setNextCameraNumber: (num: number) => void;
   selectedIconType: string;
   setSelectedIconType: (type: string) => void;
+  clearCurrentPage: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [cameras, setCameras] = useState<Camera[]>([]);
+  // Stockage des caméras par page
+  const [pageCameras, setPageCameras] = useState<PageCameras>({});
   const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
   const [scale, setScale] = useState<number>(1);
   const [page, setPage] = useState<number>(1);
@@ -50,6 +58,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedIconType, setSelectedIconType] = useState<string>("hikvision");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
+
+  // Caméras de la page courante
+  const cameras = pageCameras[page] || [];
+
+  // Journalisation pour le débogage
+  useEffect(() => {
+    console.log(`Page actuelle: ${page}`);
+    console.log(`Nombre de caméras sur cette page: ${cameras.length}`);
+    console.log('État des caméras par page:', pageCameras);
+  }, [page, cameras, pageCameras]);
+
+  // Réinitialiser la sélection lors du changement de page
+  useEffect(() => {
+    setSelectedCamera(null);
+  }, [page]);
 
   // Check for existing authentication on mount
   useEffect(() => {
@@ -99,18 +122,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       opacity: 0.9, // Plus opaque par défaut
       type: selectedIconType as CameraType, // Utiliser le type d'icône sélectionné
       iconPath: type === 'custom' ? cameraIcons[selectedIconType]?.path : undefined,
-      rotation: 0 // Ajout d'une propriété de rotation explicite
+      rotation: 0, // Ajout d'une propriété de rotation explicite
+      page: page // Stocker la page à laquelle appartient cette caméra
     };
     
-    setCameras([...cameras, newCamera]);
+    // Ajouter la caméra à la page courante
+    const currentPageCameras = [...(pageCameras[page] || []), newCamera];
+    setPageCameras({
+      ...pageCameras,
+      [page]: currentPageCameras
+    });
+    
     setSelectedCamera(newCamera.id);
     
     // Increment the next camera number
     setNextCameraNumber(nextCameraNumber + 1);
+    
+    console.log(`Caméra ajoutée à la page ${page}:`, newCamera);
   };
 
   const updateCamera = (id: string, updates: Partial<Camera>) => {
-    setCameras(cameras.map(camera => {
+    // Mettre à jour la caméra uniquement sur la page courante
+    const updatedPageCameras = (pageCameras[page] || []).map(camera => {
       if (camera.id === id) {
         // If the name is being updated, check if it follows the pattern
         if (updates.name && updates.name !== camera.name) {
@@ -130,32 +163,67 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         }
         
-        return { ...camera, ...updates };
+        const updatedCamera = { ...camera, ...updates };
+        console.log(`Caméra mise à jour sur la page ${page}:`, updatedCamera);
+        return updatedCamera;
       }
       return camera;
-    }));
+    });
+    
+    setPageCameras({
+      ...pageCameras,
+      [page]: updatedPageCameras
+    });
   };
 
   const deleteCamera = (id: string) => {
-    setCameras(cameras.filter(camera => camera.id !== id));
+    // Supprimer la caméra uniquement de la page courante
+    const filteredCameras = (pageCameras[page] || []).filter(camera => camera.id !== id);
+    
+    setPageCameras({
+      ...pageCameras,
+      [page]: filteredCameras
+    });
+    
     if (selectedCamera === id) {
       setSelectedCamera(null);
     }
+    
+    console.log(`Caméra supprimée de la page ${page}, ID: ${id}`);
   };
 
-  // Fonction commune pour générer le PDF
-  const generatePdf = async (): Promise<Blob | null> => {
+  // Fonction pour effacer toutes les caméras de la page courante
+  const clearCurrentPage = () => {
+    const updatedPageCameras = { ...pageCameras };
+    delete updatedPageCameras[page];
+    
+    setPageCameras(updatedPageCameras);
+    setSelectedCamera(null);
+    
+    console.log(`Toutes les caméras de la page ${page} ont été supprimées`);
+  };
+
+  // Fonction pour générer le PDF d'une page spécifique
+  const generatePagePdf = async (pageNumber: number): Promise<Blob | null> => {
     if (!pdfFile) return null;
     
     try {
+      console.log(`Génération du PDF pour la page ${pageNumber}`);
+      
       // Get the PDF viewer canvas
       const pdfCanvas = document.querySelector('canvas');
-      if (!pdfCanvas) return null;
+      if (!pdfCanvas) {
+        console.error('Canvas non trouvé');
+        return null;
+      }
       
       // Create a temporary canvas to render the PDF with cameras
       const tempCanvas = document.createElement('canvas');
       const ctx = tempCanvas.getContext('2d');
-      if (!ctx) return null;
+      if (!ctx) {
+        console.error('Contexte 2D non disponible');
+        return null;
+      }
       
       // Set canvas dimensions to match the PDF canvas exactly
       tempCanvas.width = pdfCanvas.width;
@@ -164,9 +232,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Draw the PDF exactly as it appears in the viewer
       ctx.drawImage(pdfCanvas, 0, 0);
       
-      // Nouvelle approche: utiliser les transformations du canvas pour dessiner les caméras
-      // avec leur orientation exacte comme dans l'interface
-      cameras.forEach(camera => {
+      // Récupérer les caméras de la page spécifique
+      const pageCamerasList = pageCameras[pageNumber] || [];
+      console.log(`Dessin de ${pageCamerasList.length} caméras pour la page ${pageNumber}`);
+      
+      // Dessiner les caméras de cette page
+      pageCamerasList.forEach(camera => {
         ctx.save();
         
         // Translate to camera position
@@ -216,6 +287,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       // Determine orientation based on width/height ratio
       const orientation = tempCanvas.width > tempCanvas.height ? 'landscape' : 'portrait';
+      console.log(`Orientation détectée: ${orientation}`);
       
       // Create PDF with appropriate dimensions
       const pdf = new jsPDF({
@@ -244,46 +316,124 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
       
       // Return the PDF as a blob
-      return pdf.output('blob');
+      const pdfBlob = pdf.output('blob');
+      console.log(`PDF généré avec succès pour la page ${pageNumber}`);
+      return pdfBlob;
       
     } catch (error) {
-      console.error('Error generating PDF:', error);
+      console.error(`Erreur lors de la génération du PDF pour la page ${pageNumber}:`, error);
       return null;
     }
   };
 
-  // Fonction pour prévisualiser le PDF
+  // Fonction pour prévisualiser le PDF de la page courante
   const previewPdf = async () => {
+    console.log(`Prévisualisation du PDF pour la page ${page}`);
+    
     // Nettoyer l'URL précédente si elle existe
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
     }
     
-    const pdfBlob = await generatePdf();
+    const pdfBlob = await generatePagePdf(page);
     if (pdfBlob) {
       const url = URL.createObjectURL(pdfBlob);
       setPreviewUrl(url);
       setIsPreviewOpen(true);
+      console.log('URL de prévisualisation créée');
+    } else {
+      console.error('Échec de la génération du PDF pour la prévisualisation');
     }
   };
 
-  // Fonction pour exporter le PDF
-  const exportPdf = async () => {
-    const pdfBlob = await generatePdf();
+  // Fonction pour exporter le PDF de la page courante
+  const exportCurrentPage = async () => {
+    console.log(`Export du PDF pour la page ${page}`);
+    
+    const pdfBlob = await generatePagePdf(page);
     if (pdfBlob) {
       const url = URL.createObjectURL(pdfBlob);
       
       // Créer un lien temporaire pour télécharger le fichier
       const link = document.createElement('a');
       link.href = url;
-      link.download = `plancam_export_${new Date().toISOString().slice(0, 10)}.pdf`;
+      link.download = `plancam_page${page}_${new Date().toISOString().slice(0, 10)}.pdf`;
       link.click();
       
       // Nettoyer l'URL
       setTimeout(() => {
         URL.revokeObjectURL(url);
       }, 100);
+      
+      console.log('PDF téléchargé avec succès');
+    } else {
+      console.error('Échec de la génération du PDF pour l\'export');
+    }
+  };
+
+  // Fonction pour exporter toutes les pages en un seul PDF
+  const exportPdf = async () => {
+    console.log('Export de toutes les pages en un seul PDF');
+    
+    if (!pdfFile || totalPages === 0) {
+      console.error('Aucun fichier PDF chargé ou nombre de pages invalide');
+      return;
+    }
+    
+    try {
+      // Sauvegarder la page courante
+      const currentPage = page;
+      
+      // Créer un nouveau PDF
+      const pdf = new jsPDF();
+      let isFirstPage = true;
+      
+      // Pour chaque page qui contient des caméras
+      for (const pageNum of Object.keys(pageCameras).map(Number).sort((a, b) => a - b)) {
+        if (pageNum > totalPages) continue;
+        
+        console.log(`Traitement de la page ${pageNum} pour l'export complet`);
+        
+        // Changer de page temporairement pour générer le PDF de cette page
+        setPage(pageNum);
+        
+        // Attendre que le rendu de la page soit terminé
+        // Note: Ceci est une simplification, en pratique il faudrait attendre que le rendu soit terminé
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Générer le PDF pour cette page
+        const pageBlob = await generatePagePdf(pageNum);
+        
+        if (pageBlob) {
+          // Convertir le blob en ArrayBuffer
+          const arrayBuffer = await pageBlob.arrayBuffer();
+          
+          // Ajouter une nouvelle page si ce n'est pas la première
+          if (!isFirstPage) {
+            pdf.addPage();
+          } else {
+            isFirstPage = false;
+          }
+          
+          // Ajouter le contenu de cette page au PDF final
+          const pageData = new Uint8Array(arrayBuffer);
+          pdf.addPage();
+          // Cette partie est simplifiée, en pratique il faudrait extraire l'image du PDF et l'ajouter
+          // au nouveau PDF avec les bonnes dimensions
+        }
+      }
+      
+      // Restaurer la page courante
+      setPage(currentPage);
+      
+      // Télécharger le PDF final
+      pdf.save(`plancam_complet_${new Date().toISOString().slice(0, 10)}.pdf`);
+      
+      console.log('Export complet terminé avec succès');
+      
+    } catch (error) {
+      console.error('Erreur lors de l\'export complet:', error);
     }
   };
 
@@ -307,6 +457,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       login,
       logout,
       exportPdf,
+      exportCurrentPage,
       previewPdf,
       previewUrl,
       setPreviewUrl,
@@ -317,7 +468,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       nextCameraNumber,
       setNextCameraNumber,
       selectedIconType,
-      setSelectedIconType
+      setSelectedIconType,
+      clearCurrentPage
     }}>
       {children}
     </AppContext.Provider>

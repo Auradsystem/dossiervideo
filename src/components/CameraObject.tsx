@@ -68,6 +68,7 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
   };
 
   const handleDragEnd = (e: any) => {
+    console.log(`Caméra déplacée: ${camera.id} à la position (${e.target.x()}, ${e.target.y()})`);
     updateCamera(camera.id, {
       x: e.target.x(),
       y: e.target.y()
@@ -83,6 +84,7 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
     node.scaleX(1);
     node.scaleY(1);
     
+    console.log(`Caméra redimensionnée: ${camera.id}, nouvelle taille: ${Math.max(5, camera.width * scaleX)} x ${Math.max(5, camera.height * scaleY)}`);
     updateCamera(camera.id, {
       x: node.x(),
       y: node.y(),
@@ -91,11 +93,12 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
     });
   };
 
-  // Nouvelle fonction pour gérer la rotation du champ de vision
+  // Fonction pour gérer la rotation du champ de vision
   const handleRotate = (e: any) => {
     if (!wedgeRef.current) return;
     
     const rotation = wedgeRef.current.rotation();
+    console.log(`Caméra tournée: ${camera.id}, nouvelle rotation: ${rotation}°`);
     updateCamera(camera.id, {
       rotation: rotation
     });
@@ -108,7 +111,10 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
         x={camera.x}
         y={camera.y}
         draggable
-        onClick={() => setSelectedCamera(camera.id)}
+        onClick={() => {
+          console.log(`Caméra sélectionnée: ${camera.id}`);
+          setSelectedCamera(camera.id);
+        }}
         onTap={() => setSelectedCamera(camera.id)}
         onDragEnd={handleDragEnd}
         onTransformEnd={handleTransformEnd}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Box, Paper, Typography, IconButton, Slider } from '@mui/material';
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Box, Paper, Typography, IconButton, Slider, Button } from '@mui/material';
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Stage, Layer } from 'react-konva';
 import { useAppContext } from '../context/AppContext';
@@ -19,12 +19,14 @@ const PdfViewer: React.FC = () => {
     page,
     setPage,
     totalPages,
-    setTotalPages
+    setTotalPages,
+    clearCurrentPage
   } = useAppContext();
   
   const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pdfPageRendered, setPdfPageRendered] = useState<HTMLCanvasElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,13 +38,18 @@ const PdfViewer: React.FC = () => {
 
     const loadPdf = async () => {
       try {
+        setIsLoading(true);
+        console.log('Chargement du PDF...');
         const fileArrayBuffer = await pdfFile.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: fileArrayBuffer }).promise;
         setPdfDocument(pdf);
         setTotalPages(pdf.numPages);
         setPage(1);
+        console.log(`PDF chargé avec ${pdf.numPages} pages`);
       } catch (error) {
         console.error('Error loading PDF:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -55,6 +62,8 @@ const PdfViewer: React.FC = () => {
 
     const renderPage = async () => {
       try {
+        setIsLoading(true);
+        console.log(`Rendu de la page ${page} avec échelle ${scale}`);
         const pdfPage = await pdfDocument.getPage(page);
         const viewport = pdfPage.getViewport({ scale });
         
@@ -78,8 +87,11 @@ const PdfViewer: React.FC = () => {
           width: viewport.width,
           height: viewport.height
         });
+        console.log(`Page ${page} rendue avec succès`);
       } catch (error) {
-        console.error('Error rendering PDF page:', error);
+        console.error(`Erreur lors du rendu de la page ${page}:`, error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -114,12 +126,14 @@ const PdfViewer: React.FC = () => {
 
   const handlePrevPage = () => {
     if (page > 1) {
+      console.log(`Navigation vers la page ${page - 1}`);
       setPage(page - 1);
     }
   };
 
   const handleNextPage = () => {
     if (page < totalPages) {
+      console.log(`Navigation vers la page ${page + 1}`);
       setPage(page + 1);
     }
   };
@@ -130,8 +144,16 @@ const PdfViewer: React.FC = () => {
       const stage = e.target.getStage();
       const pointerPosition = stage.getPointerPosition();
       if (pointerPosition) {
+        console.log(`Ajout d'une caméra à la position (${pointerPosition.x}, ${pointerPosition.y}) sur la page ${page}`);
         addCamera(pointerPosition.x, pointerPosition.y, 'dome');
       }
+    }
+  };
+
+  const handleClearPage = () => {
+    if (window.confirm(`Êtes-vous sûr de vouloir supprimer toutes les caméras de la page ${page} ?`)) {
+      console.log(`Suppression de toutes les caméras de la page ${page}`);
+      clearCurrentPage();
     }
   };
 
@@ -180,6 +202,24 @@ const PdfViewer: React.FC = () => {
               bgcolor: '#e0e0e0'
             }}
           >
+            {isLoading && (
+              <Box 
+                sx={{ 
+                  position: 'absolute', 
+                  top: 0, 
+                  left: 0, 
+                  right: 0, 
+                  bottom: 0, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  bgcolor: 'rgba(255, 255, 255, 0.7)',
+                  zIndex: 10
+                }}
+              >
+                <Typography variant="h6">Chargement...</Typography>
+              </Box>
+            )}
             <Box 
               sx={{ 
                 display: 'flex',
@@ -249,6 +289,18 @@ const PdfViewer: React.FC = () => {
             </Box>
             
             <Box sx={{ display: 'flex', alignItems: 'center', ml: 'auto' }}>
+              <Button
+                startIcon={<Trash2 size={16} />}
+                color="error"
+                variant="outlined"
+                size="small"
+                onClick={handleClearPage}
+                sx={{ mr: 2 }}
+                disabled={cameras.length === 0}
+              >
+                Effacer la page
+              </Button>
+              
               <IconButton 
                 onClick={handlePrevPage} 
                 disabled={page <= 1}

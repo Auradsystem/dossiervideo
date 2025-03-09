@@ -13,6 +13,7 @@ export interface Camera {
   type: CameraType;
   iconPath?: string; // Pour les icônes personnalisées
   rotation?: number; // Rotation explicite de la caméra
+  page?: number;     // Page à laquelle appartient cette caméra
 }
 
 // Banque d'icônes prédéfinies

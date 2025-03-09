@@ -9,7 +9,7 @@ interface PdfPreviewProps {
 }
 
 const PdfPreview: React.FC<PdfPreviewProps> = ({ open, onClose }) => {
-  const { previewUrl, exportPdf } = useAppContext();
+  const { previewUrl, exportCurrentPage, page } = useAppContext();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Ajuster la taille de l'iframe au contenu
@@ -32,12 +32,14 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({ open, onClose }) => {
 
   const handlePrint = () => {
     if (iframeRef.current && iframeRef.current.contentWindow) {
+      console.log('Impression du PDF');
       iframeRef.current.contentWindow.print();
     }
   };
 
   const handleDownload = () => {
-    exportPdf();
+    console.log('Téléchargement du PDF depuis la prévisualisation');
+    exportCurrentPage();
   };
 
   if (!previewUrl) return null;
@@ -65,7 +67,7 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({ open, onClose }) => {
         borderBottom: '1px solid',
         borderColor: 'divider'
       }}>
-        <Typography variant="h6">Aperçu avant impression</Typography>
+        <Typography variant="h6">Aperçu de la page {page}</Typography>
         <Box>
           <IconButton onClick={handlePrint} title="Imprimer">
             <Printer size={20} />
