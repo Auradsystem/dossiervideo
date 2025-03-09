@@ -55,7 +55,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [namingPattern, setNamingPattern] = useState<string>("CAM-");
   const [nextCameraNumber, setNextCameraNumber] = useState<number>(1);
-  const [selectedIconType, setSelectedIconType] = useState<string>("hikvision");
+  const [selectedIconType, setSelectedIconType] = useState<string>("dome");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
 
@@ -360,11 +360,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const currentPage = page;
       
       // Créer un nouveau PDF
-      const pdf = new jsPDF();
+      const mergedPdf = new jsPDF();
       let isFirstPage = true;
       
       // Pour chaque page qui contient des caméras
-      for (const pageNum of Object.keys(pageCameras).map(Number).sort((a, b) => a - b)) {
+      const pageNumbers = Object.keys(pageCameras).map(Number).sort((a, b) => a - b);
+      
+      if (pageNumbers.length === 0) {
+        console.error('Aucune page avec des caméras à exporter');
+        return;
+      }
+      
+      for (let i = 0; i < pageNumbers.length; i++) {
+        const pageNum = pageNumbers[i];
         if (pageNum > totalPages) continue;
         
         console.log(`Traitement de la page ${pageNum} pour l'export complet`);
@@ -373,28 +381,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setPage(pageNum);
         
         // Attendre que le rendu de la page soit terminé
-        // Note: Ceci est une simplification, en pratique il faudrait attendre que le rendu soit terminé
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Générer le PDF pour cette page
         const pageBlob = await generatePagePdf(pageNum);
         
         if (pageBlob) {
-          // Convertir le blob en ArrayBuffer
-          const arrayBuffer = await pageBlob.arrayBuffer();
+          // Convertir le blob en base64
+          const reader = new FileReader();
           
-          // Ajouter une nouvelle page si ce n'est pas la première
-          if (!isFirstPage) {
-            pdf.addPage();
-          } else {
-            isFirstPage = false;
-          }
-          
-          // Ajouter le contenu de cette page au PDF final
-          const pageData = new Uint8Array(arrayBuffer);
-          pdf.addPage();
-          // Cette partie est simplifiée, en pratique il faudrait extraire l'image du PDF et l'ajouter
-          // au nouveau PDF avec les bonnes dimensions
+          await new Promise<void>((resolve) => {
+            reader.onloadend = function() {
+              // Ajouter une nouvelle page si ce n'est pas la première
+              if (!isFirstPage) {
+                mergedPdf.addPage();
+              } else {
+                isFirstPage = false;
+              }
+              
+              // Extraire la base64 data
+              const base64data = reader.result as string;
+              const base64Clean = base64data.split(',')[1];
+              
+              // Créer un PDF temporaire à partir du blob
+              const tempPdf = new jsPDF();
+              tempPdf.loadFile(base64Clean);
+              
+              // Obtenir les dimensions du PDF temporaire
+              const pageWidth = tempPdf.internal.pageSize.getWidth();
+              const pageHeight = tempPdf.internal.pageSize.getHeight();
+              
+              // Ajouter l'image au PDF fusionné
+              mergedPdf.addImage(base64data, 'JPEG', 0, 0, pageWidth, pageHeight);
+              
+              resolve();
+            };
+            reader.readAsDataURL(pageBlob);
+          });
         }
       }
       
@@ -402,7 +425,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setPage(currentPage);
       
       // Télécharger le PDF final
-      pdf.save(`plancam_complet_${new Date().toISOString().slice(0, 10)}.pdf`);
+      mergedPdf.save(`plancam_complet_${new Date().toISOString().slice(0, 10)}.pdf`);
       
       console.log('Export complet terminé avec succès');
       
