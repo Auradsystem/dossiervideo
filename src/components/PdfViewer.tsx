@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Box, Paper, Typography, IconButton, Slider, Button } from '@mui/material';
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Trash2, MessageSquare } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Stage, Layer } from 'react-konva';
 import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
+import CommentObject from './CommentObject';
+import CommentForm from './CommentForm';
 
 // Set up PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -20,13 +22,21 @@ const PdfViewer: React.FC = () => {
     setPage,
     totalPages,
     setTotalPages,
-    clearCurrentPage
+    clearCurrentPage,
+    comments,
+    isAddingComment,
+    setIsAddingComment,
+    selectedComment,
+    setSelectedComment,
+    deleteComment
   } = useAppContext();
   
   const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pdfPageRendered, setPdfPageRendered] = useState<HTMLCanvasElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [commentPosition, setCommentPosition] = useState<{ x: number, y: number } | null>(null);
+  const [commentFormOpen, setCommentFormOpen] = useState<boolean>(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -139,21 +149,52 @@ const PdfViewer: React.FC = () => {
   };
 
   const handleStageClick = (e: any) => {
-    // Only add camera if clicking directly on the stage (not on a camera)
-    if (e.target === e.currentTarget) {
-      const stage = e.target.getStage();
-      const pointerPosition = stage.getPointerPosition();
+    // Récupérer la cible du clic
+    const clickTarget = e.target;
+    const stage = e.target.getStage();
+    const pointerPosition = stage.getPointerPosition();
+    
+    // Si on est en mode ajout de commentaire
+    if (isAddingComment && pointerPosition) {
+      console.log(`Ajout d'un commentaire à la position (${pointerPosition.x}, ${pointerPosition.y})`);
+      setCommentPosition(pointerPosition);
+      setCommentFormOpen(true);
+      return;
+    }
+    
+    // Si on clique directement sur le stage (pas sur une caméra ou un commentaire)
+    if (clickTarget === stage) {
       if (pointerPosition) {
         console.log(`Ajout d'une caméra à la position (${pointerPosition.x}, ${pointerPosition.y}) sur la page ${page}`);
         addCamera(pointerPosition.x, pointerPosition.y, 'dome');
+      }
+      // Désélectionner le commentaire
+      if (selectedComment) {
+        setSelectedComment(null);
       }
     }
   };
 
   const handleClearPage = () => {
-    if (window.confirm(`Êtes-vous sûr de vouloir supprimer toutes les caméras de la page ${page} ?`)) {
-      console.log(`Suppression de toutes les caméras de la page ${page}`);
+    if (window.confirm(`Êtes-vous sûr de vouloir supprimer toutes les caméras et commentaires de la page ${page} ?`)) {
+      console.log(`Suppression de toutes les caméras et commentaires de la page ${page}`);
       clearCurrentPage();
+    }
+  };
+
+  const handleAddComment = () => {
+    setIsAddingComment(true);
+  };
+
+  const handleDeleteComment = () => {
+    if (selectedComment && window.confirm('Êtes-vous sûr de vouloir supprimer ce commentaire ?')) {
+      deleteComment(selectedComment);
+    }
+  };
+
+  const handleEditComment = () => {
+    if (selectedComment) {
+      setCommentFormOpen(true);
     }
   };
 
@@ -240,7 +281,8 @@ const PdfViewer: React.FC = () => {
                       position: 'absolute', 
                       top: 0, 
                       left: 0,
-                      pointerEvents: 'auto'
+                      pointerEvents: 'auto',
+                      cursor: isAddingComment ? 'crosshair' : 'default'
                     }}
                     onClick={handleStageClick}
                     className="konvajs-content"
@@ -250,6 +292,12 @@ const PdfViewer: React.FC = () => {
                         <CameraObject 
                           key={camera.id} 
                           camera={camera} 
+                        />
+                      ))}
+                      {comments.map(comment => (
+                        <CommentObject
+                          key={comment.id}
+                          comment={comment}
                         />
                       ))}
                     </Layer>
@@ -289,6 +337,42 @@ const PdfViewer: React.FC = () => {
               </Typography>
             </Box>
             
+            <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
+              <Button
+                startIcon={<MessageSquare size={16} />}
+                color="primary"
+                variant={isAddingComment ? "contained" : "outlined"}
+                size="small"
+                onClick={handleAddComment}
+                sx={{ mr: 1 }}
+              >
+                {isAddingComment ? "Placer commentaire" : "Ajouter commentaire"}
+              </Button>
+              
+              {selectedComment && (
+                <>
+                  <Button
+                    color="primary"
+                    variant="outlined"
+                    size="small"
+                    onClick={handleEditComment}
+                    sx={{ mr: 1 }}
+                  >
+                    Modifier
+                  </Button>
+                  <Button
+                    color="error"
+                    variant="outlined"
+                    size="small"
+                    onClick={handleDeleteComment}
+                    sx={{ mr: 1 }}
+                  >
+                    Supprimer
+                  </Button>
+                </>
+              )}
+            </Box>
+            
             <Box sx={{ display: 'flex', alignItems: 'center', ml: 'auto' }}>
               <Button
                 startIcon={<Trash2 size={16} />}
@@ -297,7 +381,7 @@ const PdfViewer: React.FC = () => {
                 size="small"
                 onClick={handleClearPage}
                 sx={{ mr: 2 }}
-                disabled={cameras.length === 0}
+                disabled={cameras.length === 0 && comments.length === 0}
               >
                 Effacer la page
               </Button>
@@ -321,6 +405,16 @@ const PdfViewer: React.FC = () => {
               </IconButton>
             </Box>
           </Paper>
+          
+          {/* Formulaire d'ajout/modification de commentaire */}
+          <CommentForm
+            open={commentFormOpen}
+            onClose={() => {
+              setCommentFormOpen(false);
+              setIsAddingComment(false);
+            }}
+            position={commentPosition}
+          />
         </>
       )}
     </Box>

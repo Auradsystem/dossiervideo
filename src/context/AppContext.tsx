@@ -2,10 +2,16 @@ import React, { createContext, useContext, useState, ReactNode, useEffect } from
 import { v4 as uuidv4 } from 'uuid';
 import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
+import { Comment } from '../types/Comment';
 
 // Interface pour stocker les caméras par page
 interface PageCameras {
   [pageNumber: number]: Camera[];
+}
+
+// Interface pour stocker les commentaires par page
+interface PageComments {
+  [pageNumber: number]: Comment[];
 }
 
 interface AppContextType {
@@ -40,6 +46,15 @@ interface AppContextType {
   selectedIconType: string;
   setSelectedIconType: (type: string) => void;
   clearCurrentPage: () => void;
+  // Nouvelles fonctionnalités pour les commentaires
+  comments: Comment[];
+  addComment: (x: number, y: number, text: string, cameraId?: string) => void;
+  updateComment: (id: string, updates: Partial<Comment>) => void;
+  deleteComment: (id: string) => void;
+  selectedComment: string | null;
+  setSelectedComment: (id: string | null) => void;
+  isAddingComment: boolean;
+  setIsAddingComment: (isAdding: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -58,19 +73,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedIconType, setSelectedIconType] = useState<string>("dome");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
+  
+  // Nouveaux états pour les commentaires
+  const [pageComments, setPageComments] = useState<PageComments>({});
+  const [selectedComment, setSelectedComment] = useState<string | null>(null);
+  const [isAddingComment, setIsAddingComment] = useState<boolean>(false);
 
   // Caméras de la page courante
   const cameras = pageCameras[page] || [];
+  
+  // Commentaires de la page courante
+  const comments = pageComments[page] || [];
 
   // Journalisation pour le débogage
   useEffect(() => {
     console.log(`Page actuelle: ${page}`);
     console.log(`Nombre de caméras sur cette page: ${cameras.length}`);
-  }, [page, cameras]);
+    console.log(`Nombre de commentaires sur cette page: ${comments.length}`);
+  }, [page, cameras, comments]);
 
   // Réinitialiser la sélection lors du changement de page
   useEffect(() => {
     setSelectedCamera(null);
+    setSelectedComment(null);
   }, [page]);
 
   // Check for existing authentication on mount
@@ -188,6 +213,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCamera(null);
     }
     
+    // Supprimer également les commentaires associés à cette caméra
+    const filteredComments = (pageComments[page] || []).filter(comment => comment.cameraId !== id);
+    
+    setPageComments({
+      ...pageComments,
+      [page]: filteredComments
+    });
+    
     console.log(`Caméra supprimée de la page ${page}, ID: ${id}`);
   };
 
@@ -199,7 +232,94 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setPageCameras(updatedPageCameras);
     setSelectedCamera(null);
     
-    console.log(`Toutes les caméras de la page ${page} ont été supprimées`);
+    // Supprimer également tous les commentaires de la page
+    const updatedPageComments = { ...pageComments };
+    delete updatedPageComments[page];
+    
+    setPageComments(updatedPageComments);
+    setSelectedComment(null);
+    
+    console.log(`Toutes les caméras et commentaires de la page ${page} ont été supprimés`);
+  };
+
+  // Nouvelles fonctions pour gérer les commentaires
+  const addComment = (x: number, y: number, text: string, cameraId?: string) => {
+    const newComment: Comment = {
+      id: uuidv4(),
+      text,
+      x,
+      y,
+      page,
+      color: getRandomColor(),
+      cameraId,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    // Ajouter le commentaire à la page courante
+    const currentPageComments = [...(pageComments[page] || []), newComment];
+    setPageComments({
+      ...pageComments,
+      [page]: currentPageComments
+    });
+    
+    setSelectedComment(newComment.id);
+    setIsAddingComment(false);
+    
+    console.log(`Commentaire ajouté à la page ${page}:`, newComment);
+  };
+
+  const updateComment = (id: string, updates: Partial<Comment>) => {
+    // Mettre à jour le commentaire uniquement sur la page courante
+    const updatedPageComments = (pageComments[page] || []).map(comment => {
+      if (comment.id === id) {
+        const updatedComment = { 
+          ...comment, 
+          ...updates,
+          updatedAt: new Date()
+        };
+        console.log(`Commentaire mis à jour sur la page ${page}:`, updatedComment);
+        return updatedComment;
+      }
+      return comment;
+    });
+    
+    setPageComments({
+      ...pageComments,
+      [page]: updatedPageComments
+    });
+  };
+
+  const deleteComment = (id: string) => {
+    // Supprimer le commentaire uniquement de la page courante
+    const filteredComments = (pageComments[page] || []).filter(comment => comment.id !== id);
+    
+    setPageComments({
+      ...pageComments,
+      [page]: filteredComments
+    });
+    
+    if (selectedComment === id) {
+      setSelectedComment(null);
+    }
+    
+    console.log(`Commentaire supprimé de la page ${page}, ID: ${id}`);
+  };
+
+  // Fonction pour générer une couleur aléatoire pour les commentaires
+  const getRandomColor = () => {
+    const colors = [
+      '#FF5252', // Rouge
+      '#4CAF50', // Vert
+      '#2196F3', // Bleu
+      '#FFC107', // Jaune
+      '#9C27B0', // Violet
+      '#FF9800', // Orange
+      '#00BCD4', // Cyan
+      '#795548', // Marron
+      '#607D8B'  // Bleu-gris
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
   };
 
   // Fonction pour capturer l'état exact du canvas avec les caméras
@@ -480,7 +600,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setNextCameraNumber,
       selectedIconType,
       setSelectedIconType,
-      clearCurrentPage
+      clearCurrentPage,
+      // Nouvelles valeurs pour les commentaires
+      comments,
+      addComment,
+      updateComment,
+      deleteComment,
+      selectedComment,
+      setSelectedComment,
+      isAddingComment,
+      setIsAddingComment
     }}>
       {children}
     </AppContext.Provider>
