@@ -1,42 +1,44 @@
-import React, { useRef } from 'react';
+import React, { useState } from 'react';
 import { 
   AppBar, 
   Toolbar, 
   Typography, 
   Button, 
   Box, 
-  IconButton, 
-  Menu, 
+  IconButton,
+  Menu,
   MenuItem,
-  Divider,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions
+  Divider
 } from '@mui/material';
 import { 
   Upload, 
   Download, 
   LogOut, 
-  Menu as MenuIcon,
-  Info,
-  HelpCircle
+  Eye,
+  Settings,
+  ChevronDown
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import PdfPreview from './PdfPreview';
 
 const Header: React.FC = () => {
   const { 
     setPdfFile, 
-    isAuthenticated, 
+    exportPdf, 
     logout,
-    exportPdf
+    previewPdf,
+    isPreviewOpen,
+    setIsPreviewOpen
   } = useAppContext();
   
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
-  const [aboutDialogOpen, setAboutDialogOpen] = React.useState(false);
-  const [helpDialogOpen, setHelpDialogOpen] = React.useState(false);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      setPdfFile(files[0]);
+    }
+  };
   
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -46,149 +48,93 @@ const Header: React.FC = () => {
     setAnchorEl(null);
   };
   
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      if (file.type === 'application/pdf') {
-        setPdfFile(file);
-      } else {
-        alert('Veuillez sélectionner un fichier PDF');
-      }
-    }
+  const handlePreview = () => {
+    handleMenuClose();
+    previewPdf();
   };
   
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-  
-  const handleExportClick = () => {
+  const handleExport = () => {
+    handleMenuClose();
     exportPdf();
   };
   
   const handleLogout = () => {
     logout();
-    handleMenuClose();
   };
   
-  const handleAboutClick = () => {
-    setAboutDialogOpen(true);
-    handleMenuClose();
-  };
-  
-  const handleHelpClick = () => {
-    setHelpDialogOpen(true);
-    handleMenuClose();
+  const handleClosePreview = () => {
+    setIsPreviewOpen(false);
   };
 
   return (
     <>
       <AppBar position="static" color="primary" elevation={1}>
         <Toolbar>
-          <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
-            <img 
-              src="/camera-icon.svg" 
-              alt="PlanCam Logo" 
-              style={{ height: '32px', marginRight: '12px' }} 
-            />
-            <Typography variant="h6" component="div">
-              PlanCam
-            </Typography>
-          </Box>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            PlanCam
+          </Typography>
           
-          {isAuthenticated && (
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button 
-                variant="outlined" 
-                color="inherit" 
-                startIcon={<Upload />}
-                onClick={handleUploadClick}
-              >
-                Charger PDF
-              </Button>
-              <Button 
-                variant="outlined" 
-                color="inherit" 
-                startIcon={<Download />}
-                onClick={handleExportClick}
-              >
-                Exporter
-              </Button>
-              <IconButton 
-                color="inherit"
-                onClick={handleMenuOpen}
-                size="small"
-                sx={{ ml: 1 }}
-              >
-                <MenuIcon />
-              </IconButton>
-              <Menu
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={handleMenuClose}
-              >
-                <MenuItem onClick={handleAboutClick}>
-                  <Info size={18} style={{ marginRight: '8px' }} />
-                  À propos
-                </MenuItem>
-                <MenuItem onClick={handleHelpClick}>
-                  <HelpCircle size={18} style={{ marginRight: '8px' }} />
-                  Aide
-                </MenuItem>
-                <Divider />
-                <MenuItem onClick={handleLogout}>
-                  <LogOut size={18} style={{ marginRight: '8px' }} />
-                  Déconnexion
-                </MenuItem>
-              </Menu>
-            </Box>
-          )}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              component="label"
+              variant="contained"
+              startIcon={<Upload size={18} />}
+              sx={{ mr: 1 }}
+            >
+              Charger PDF
+              <input
+                type="file"
+                accept=".pdf"
+                hidden
+                onChange={handleFileChange}
+              />
+            </Button>
+            
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<Download size={18} />}
+              onClick={handleMenuOpen}
+              endIcon={<ChevronDown size={16} />}
+            >
+              Exporter
+            </Button>
+            
+            <Menu
+              anchorEl={anchorEl}
+              open={Boolean(anchorEl)}
+              onClose={handleMenuClose}
+            >
+              <MenuItem onClick={handlePreview} dense>
+                <Eye size={16} style={{ marginRight: 8 }} />
+                Aperçu
+              </MenuItem>
+              <MenuItem onClick={handleExport} dense>
+                <Download size={16} style={{ marginRight: 8 }} />
+                Télécharger PDF
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={handleMenuClose} dense>
+                <Settings size={16} style={{ marginRight: 8 }} />
+                Paramètres d'export
+              </MenuItem>
+            </Menu>
+            
+            <IconButton 
+              color="inherit" 
+              onClick={handleLogout}
+              title="Déconnexion"
+            >
+              <LogOut size={20} />
+            </IconButton>
+          </Box>
         </Toolbar>
       </AppBar>
       
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: 'none' }}
-        accept="application/pdf"
-        onChange={handleFileUpload}
+      <PdfPreview 
+        open={isPreviewOpen} 
+        onClose={handleClosePreview} 
       />
-      
-      <Dialog open={aboutDialogOpen} onClose={() => setAboutDialogOpen(false)}>
-        <DialogTitle>À propos de PlanCam</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            PlanCam est une application de gestion de caméras de vidéoprotection sur plans PDF.
-            <br /><br />
-            Version: 1.0.0
-            <br />
-            © 2023 XCEL Vidéo
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAboutDialogOpen(false)}>Fermer</Button>
-        </DialogActions>
-      </Dialog>
-      
-      <Dialog open={helpDialogOpen} onClose={() => setHelpDialogOpen(false)}>
-        <DialogTitle>Aide</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            <strong>Comment utiliser PlanCam:</strong>
-            <br /><br />
-            1. Chargez un plan PDF avec le bouton "Charger PDF"
-            <br />
-            2. Cliquez sur le plan pour ajouter des caméras
-            <br />
-            3. Sélectionnez une caméra pour modifier ses propriétés
-            <br />
-            4. Utilisez le bouton "Exporter" pour sauvegarder votre plan avec les caméras
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setHelpDialogOpen(false)}>Fermer</Button>
-        </DialogActions>
-      </Dialog>
     </>
   );
 };

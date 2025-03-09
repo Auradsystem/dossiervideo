@@ -12,6 +12,7 @@ export interface Camera {
   opacity: number;
   type: CameraType;
   iconPath?: string; // Pour les icônes personnalisées
+  rotation?: number; // Rotation explicite de la caméra
 }
 
 // Banque d'icônes prédéfinies

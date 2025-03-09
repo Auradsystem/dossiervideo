@@ -17,6 +17,7 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
   const isSelected = selectedCamera === camera.id;
   const transformerRef = React.useRef<any>(null);
   const groupRef = React.useRef<any>(null);
+  const wedgeRef = React.useRef<any>(null);
   
   React.useEffect(() => {
     if (isSelected && transformerRef.current && groupRef.current) {
@@ -90,6 +91,16 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
     });
   };
 
+  // Nouvelle fonction pour gérer la rotation du champ de vision
+  const handleRotate = (e: any) => {
+    if (!wedgeRef.current) return;
+    
+    const rotation = wedgeRef.current.rotation();
+    updateCamera(camera.id, {
+      rotation: rotation
+    });
+  };
+
   return (
     <>
       <Group
@@ -102,15 +113,18 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
         onDragEnd={handleDragEnd}
         onTransformEnd={handleTransformEnd}
       >
-        {/* Camera view angle - maintenant en rouge */}
+        {/* Camera view angle - maintenant en rouge et avec rotation */}
         <Wedge
+          ref={wedgeRef}
           radius={camera.viewDistance}
           angle={camera.angle}
           fill="rgba(255, 0, 0, 0.3)"
           stroke="rgba(255, 0, 0, 0.6)"
           strokeWidth={1}
-          rotation={-camera.angle / 2}
+          rotation={camera.rotation || -camera.angle / 2}
           opacity={camera.opacity}
+          draggable={isSelected}
+          onDragEnd={handleRotate}
         />
         
         {/* Camera icon */}

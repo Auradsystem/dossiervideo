@@ -22,6 +22,11 @@ interface AppContextType {
   login: (username: string, password: string) => boolean;
   logout: () => void;
   exportPdf: () => void;
+  previewPdf: () => void;
+  previewUrl: string | null;
+  setPreviewUrl: (url: string | null) => void;
+  isPreviewOpen: boolean;
+  setIsPreviewOpen: (isOpen: boolean) => void;
   namingPattern: string;
   setNamingPattern: (pattern: string) => void;
   nextCameraNumber: number;
@@ -43,6 +48,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [namingPattern, setNamingPattern] = useState<string>("CAM-");
   const [nextCameraNumber, setNextCameraNumber] = useState<number>(1);
   const [selectedIconType, setSelectedIconType] = useState<string>("hikvision");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
 
   // Check for existing authentication on mount
   useEffect(() => {
@@ -51,6 +58,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsAuthenticated(true);
     }
   }, []);
+
+  // Cleanup preview URL when component unmounts
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   const login = (username: string, password: string): boolean => {
     if (username === 'xcel' && password === 'video') {
@@ -82,7 +98,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       viewDistance: 100,
       opacity: 0.9, // Plus opaque par défaut
       type: selectedIconType as CameraType, // Utiliser le type d'icône sélectionné
-      iconPath: type === 'custom' ? cameraIcons[selectedIconType]?.path : undefined
+      iconPath: type === 'custom' ? cameraIcons[selectedIconType]?.path : undefined,
+      rotation: 0 // Ajout d'une propriété de rotation explicite
     };
     
     setCameras([...cameras, newCamera]);
@@ -126,18 +143,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const exportPdf = async () => {
-    if (!pdfFile) return;
+  // Fonction commune pour générer le PDF
+  const generatePdf = async (): Promise<Blob | null> => {
+    if (!pdfFile) return null;
     
     try {
       // Get the PDF viewer canvas
       const pdfCanvas = document.querySelector('canvas');
-      if (!pdfCanvas) return;
+      if (!pdfCanvas) return null;
       
       // Create a temporary canvas to render the PDF with cameras
       const tempCanvas = document.createElement('canvas');
       const ctx = tempCanvas.getContext('2d');
-      if (!ctx) return;
+      if (!ctx) return null;
       
       // Set canvas dimensions to match the PDF canvas exactly
       tempCanvas.width = pdfCanvas.width;
@@ -146,7 +164,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Draw the PDF exactly as it appears in the viewer
       ctx.drawImage(pdfCanvas, 0, 0);
       
-      // Draw cameras with the same orientation as in the viewer
+      // Nouvelle approche: utiliser les transformations du canvas pour dessiner les caméras
+      // avec leur orientation exacte comme dans l'interface
       cameras.forEach(camera => {
         ctx.save();
         
@@ -154,18 +173,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ctx.translate(camera.x, camera.y);
         
         // Draw view angle in red with proper orientation
-        // Start with a rotation of -90 degrees to align with the default orientation
-        // Then apply the camera's specific rotation
         ctx.beginPath();
+        
+        // Calculer l'angle de départ et de fin en tenant compte de la rotation de la caméra
+        const cameraRotation = camera.rotation || 0;
+        const halfAngle = camera.angle / 2;
+        
+        // Convertir les angles en radians
+        const startAngle = ((270 - halfAngle + cameraRotation) % 360) * Math.PI / 180;
+        const endAngle = ((270 + halfAngle + cameraRotation) % 360) * Math.PI / 180;
+        
+        // Dessiner l'arc de cercle représentant le champ de vision
         ctx.moveTo(0, 0);
-        
-        // Calculate start and end angles for the arc
-        // Convert from degrees to radians and adjust for orientation
-        const startAngle = (-camera.angle / 2) * (Math.PI / 180);
-        const endAngle = (camera.angle / 2) * (Math.PI / 180);
-        
-        ctx.arc(0, 0, camera.viewDistance, startAngle, endAngle, false);
+        ctx.arc(0, 0, camera.viewDistance, startAngle, endAngle);
         ctx.closePath();
+        
         ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
         ctx.fill();
         ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
@@ -192,10 +214,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ctx.restore();
       });
       
-      // Get the image data from the canvas
-      const imageData = tempCanvas.toDataURL('image/png', 1.0);
-      
-      // Create a new PDF with the same dimensions as the canvas
       // Determine orientation based on width/height ratio
       const orientation = tempCanvas.width > tempCanvas.height ? 'landscape' : 'portrait';
       
@@ -207,14 +225,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         hotfixes: ['px_scaling']
       });
       
-      // Calculate the PDF dimensions in points (72 points per inch)
+      // Calculate the PDF dimensions in points
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      // Get the image data from the canvas with high quality
+      const imageData = tempCanvas.toDataURL('image/jpeg', 1.0);
       
       // Add the image to the PDF, preserving the exact dimensions and orientation
       pdf.addImage({
         imageData: imageData,
-        format: 'PNG',
+        format: 'JPEG',
         x: 0,
         y: 0,
         width: pdfWidth,
@@ -222,11 +243,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         compression: 'NONE'
       });
       
-      // Save the PDF
-      pdf.save(`plancam_export_${new Date().toISOString().slice(0, 10)}.pdf`);
+      // Return the PDF as a blob
+      return pdf.output('blob');
       
     } catch (error) {
-      console.error('Error exporting PDF:', error);
+      console.error('Error generating PDF:', error);
+      return null;
+    }
+  };
+
+  // Fonction pour prévisualiser le PDF
+  const previewPdf = async () => {
+    // Nettoyer l'URL précédente si elle existe
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+    
+    const pdfBlob = await generatePdf();
+    if (pdfBlob) {
+      const url = URL.createObjectURL(pdfBlob);
+      setPreviewUrl(url);
+      setIsPreviewOpen(true);
+    }
+  };
+
+  // Fonction pour exporter le PDF
+  const exportPdf = async () => {
+    const pdfBlob = await generatePdf();
+    if (pdfBlob) {
+      const url = URL.createObjectURL(pdfBlob);
+      
+      // Créer un lien temporaire pour télécharger le fichier
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `plancam_export_${new Date().toISOString().slice(0, 10)}.pdf`;
+      link.click();
+      
+      // Nettoyer l'URL
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 100);
     }
   };
 
@@ -250,6 +307,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       login,
       logout,
       exportPdf,
+      previewPdf,
+      previewUrl,
+      setPreviewUrl,
+      isPreviewOpen,
+      setIsPreviewOpen,
       namingPattern,
       setNamingPattern,
       nextCameraNumber,
