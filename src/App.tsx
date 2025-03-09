@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box } from '@mui/material';
@@ -6,7 +6,7 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import PdfViewer from './components/PdfViewer';
 import LoginForm from './components/LoginForm';
-import { Camera } from './types/Camera';
+import PdfPreview from './components/PdfPreview';
 import { AppProvider, useAppContext } from './context/AppContext';
 
 const theme = createTheme({
@@ -52,6 +52,7 @@ const MainApp: React.FC = () => {
           <PdfViewer />
         </Box>
       </Box>
+      <PdfPreview />
     </Box>
   );
 };

@@ -5,10 +5,9 @@ import { useAppContext } from '../context/AppContext';
 
 interface CommentObjectProps {
   comment: Comment;
-  forExport?: boolean;
 }
 
-const CommentObject: React.FC<CommentObjectProps> = ({ comment, forExport = false }) => {
+const CommentObject: React.FC<CommentObjectProps> = ({ comment }) => {
   const { 
     selectedComment, 
     setSelectedComment, 
@@ -37,13 +36,9 @@ const CommentObject: React.FC<CommentObjectProps> = ({ comment, forExport = fals
   };
 
   // Calculer la largeur du texte pour dimensionner correctement le rectangle
-  const fontSize = comment.fontSize || 14; // Utiliser la taille de police du commentaire ou 14 par défaut
-  const textWidth = comment.text.length * (fontSize / 2); // Ajuster en fonction de la taille de police
+  const textWidth = comment.text.length * 7; // Approximation
   const width = Math.max(100, textWidth + 20);
-  const height = Math.max(40, fontSize * 2.5); // Ajuster la hauteur en fonction de la taille de police
-
-  // Toujours afficher le commentaire complet lors de l'export
-  const shouldShowFull = isSelected || forExport;
+  const height = 40;
 
   return (
     <>
@@ -51,9 +46,8 @@ const CommentObject: React.FC<CommentObjectProps> = ({ comment, forExport = fals
         ref={groupRef}
         x={comment.x}
         y={comment.y}
-        draggable={!forExport}
+        draggable
         onClick={() => {
-          if (forExport) return; // Désactiver les interactions lors de l'export
           console.log(`Commentaire sélectionné: ${comment.id}`);
           setSelectedComment(comment.id);
           // Désélectionner la caméra si un commentaire est sélectionné
@@ -61,7 +55,7 @@ const CommentObject: React.FC<CommentObjectProps> = ({ comment, forExport = fals
             setSelectedCamera(null);
           }
         }}
-        onTap={() => !forExport && setSelectedComment(comment.id)}
+        onTap={() => setSelectedComment(comment.id)}
         onDragEnd={handleDragEnd}
       >
         {/* Indicateur de commentaire */}
@@ -74,7 +68,7 @@ const CommentObject: React.FC<CommentObjectProps> = ({ comment, forExport = fals
         />
         
         {/* Bulle de commentaire */}
-        {shouldShowFull && (
+        {isSelected && (
           <>
             <Rect
               x={15}
@@ -94,7 +88,7 @@ const CommentObject: React.FC<CommentObjectProps> = ({ comment, forExport = fals
               x={25}
               y={-height / 2 + 10}
               text={comment.text}
-              fontSize={fontSize}
+              fontSize={14}
               fill="#000"
               width={width - 20}
               height={height - 20}
@@ -104,7 +98,7 @@ const CommentObject: React.FC<CommentObjectProps> = ({ comment, forExport = fals
         )}
       </Group>
       
-      {isSelected && !forExport && (
+      {isSelected && (
         <Transformer
           ref={transformerRef}
           enabledAnchors={[]}
