@@ -129,33 +129,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!pdfFile) return;
     
     try {
+      // Get the PDF viewer canvas
+      const pdfCanvas = document.querySelector('canvas');
+      if (!pdfCanvas) return;
+      
       // Create a canvas to render the PDF with cameras
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       
-      // Get the PDF viewer canvas
-      const pdfCanvas = document.querySelector('canvas');
-      if (!pdfCanvas) return;
-      
-      // Set canvas dimensions
+      // Set canvas dimensions to match the PDF canvas exactly
       canvas.width = pdfCanvas.width;
       canvas.height = pdfCanvas.height;
       
-      // Draw the PDF
+      // Draw the PDF exactly as it appears in the viewer
       ctx.drawImage(pdfCanvas, 0, 0);
       
-      // Draw cameras (simplified representation)
+      // Draw cameras with the same orientation as in the viewer
       cameras.forEach(camera => {
         ctx.save();
         ctx.translate(camera.x, camera.y);
         
-        // Draw view angle - maintenant en rouge
+        // Draw view angle in red with proper orientation
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.arc(0, 0, camera.viewDistance, 
-                -Math.PI * camera.angle / 360, 
-                Math.PI * camera.angle / 360, 
+                (Math.PI * (-camera.angle / 2)) / 180, 
+                (Math.PI * (camera.angle / 2)) / 180, 
                 false);
         ctx.closePath();
         ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
@@ -167,7 +167,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ctx.beginPath();
         ctx.arc(0, 0, camera.width / 2, 0, Math.PI * 2);
         
-        // Utiliser la couleur correspondant au type de caméra
+        // Use the color corresponding to the camera type
         const iconData = cameraIcons[camera.type] || cameraIcons.dome;
         ctx.fillStyle = iconData.color;
         
@@ -184,7 +184,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ctx.restore();
       });
       
-      // Convert canvas to blob and download
+      // Convert canvas to blob and download as PNG to preserve exact layout
       canvas.toBlob((blob) => {
         if (!blob) return;
         

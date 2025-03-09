@@ -1,40 +1,42 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { 
   AppBar, 
   Toolbar, 
   Typography, 
   Button, 
-  Box,
-  IconButton,
-  Tooltip,
-  Menu,
+  Box, 
+  IconButton, 
+  Menu, 
   MenuItem,
-  Avatar
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions
 } from '@mui/material';
-import { Camera, Save, FileUp, FileDown, HelpCircle, LogOut, User } from 'lucide-react';
+import { 
+  Upload, 
+  Download, 
+  LogOut, 
+  Menu as MenuIcon,
+  Info,
+  HelpCircle
+} from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 const Header: React.FC = () => {
   const { 
     setPdfFile, 
-    exportPdf, 
     isAuthenticated, 
-    logout 
+    logout,
+    exportPdf
   } = useAppContext();
   
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
-  
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      if (file.type === 'application/pdf') {
-        setPdfFile(file);
-      } else {
-        alert('Veuillez sélectionner un fichier PDF valide.');
-      }
-    }
-  };
+  const [aboutDialogOpen, setAboutDialogOpen] = React.useState(false);
+  const [helpDialogOpen, setHelpDialogOpen] = React.useState(false);
   
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -44,97 +46,150 @@ const Header: React.FC = () => {
     setAnchorEl(null);
   };
   
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type === 'application/pdf') {
+        setPdfFile(file);
+      } else {
+        alert('Veuillez sélectionner un fichier PDF');
+      }
+    }
+  };
+  
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+  
+  const handleExportClick = () => {
+    exportPdf();
+  };
+  
   const handleLogout = () => {
     logout();
     handleMenuClose();
   };
+  
+  const handleAboutClick = () => {
+    setAboutDialogOpen(true);
+    handleMenuClose();
+  };
+  
+  const handleHelpClick = () => {
+    setHelpDialogOpen(true);
+    handleMenuClose();
+  };
 
   return (
-    <AppBar position="static">
-      <Toolbar>
-        <Camera size={24} />
-        <Typography variant="h6" component="div" sx={{ ml: 2, flexGrow: 1 }}>
-          PlanCam
-        </Typography>
-        
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="contained"
-            component="label"
-            startIcon={<FileUp size={18} />}
-            color="primary"
-            sx={{ bgcolor: 'rgba(255,255,255,0.1)' }}
-          >
-            Charger PDF
-            <input
-              type="file"
-              accept=".pdf"
-              hidden
-              onChange={handleFileUpload}
+    <>
+      <AppBar position="static" color="primary" elevation={1}>
+        <Toolbar>
+          <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+            <img 
+              src="/camera-icon.svg" 
+              alt="PlanCam Logo" 
+              style={{ height: '32px', marginRight: '12px' }} 
             />
-          </Button>
+            <Typography variant="h6" component="div">
+              PlanCam
+            </Typography>
+          </Box>
           
-          <Button
-            variant="contained"
-            startIcon={<Save size={18} />}
-            color="primary"
-            sx={{ bgcolor: 'rgba(255,255,255,0.1)' }}
-          >
-            Sauvegarder
-          </Button>
-          
-          <Button
-            variant="contained"
-            startIcon={<FileDown size={18} />}
-            color="primary"
-            sx={{ bgcolor: 'rgba(255,255,255,0.1)' }}
-            onClick={exportPdf}
-          >
-            Exporter
-          </Button>
-          
-          <Tooltip title="Aide">
-            <IconButton color="inherit">
-              <HelpCircle size={20} />
-            </IconButton>
-          </Tooltip>
-          
-          <Tooltip title="Profil">
-            <IconButton 
-              color="inherit" 
-              onClick={handleMenuOpen}
-              sx={{ ml: 1 }}
-            >
-              <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.dark' }}>
-                <User size={20} />
-              </Avatar>
-            </IconButton>
-          </Tooltip>
-          
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleMenuClose}
-            anchorOrigin={{
-              vertical: 'bottom',
-              horizontal: 'right',
-            }}
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-          >
-            <MenuItem disabled>
-              <Typography variant="body2">Connecté en tant que xcel</Typography>
-            </MenuItem>
-            <MenuItem onClick={handleLogout}>
-              <LogOut size={16} style={{ marginRight: 8 }} />
-              Déconnexion
-            </MenuItem>
-          </Menu>
-        </Box>
-      </Toolbar>
-    </AppBar>
+          {isAuthenticated && (
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button 
+                variant="outlined" 
+                color="inherit" 
+                startIcon={<Upload />}
+                onClick={handleUploadClick}
+              >
+                Charger PDF
+              </Button>
+              <Button 
+                variant="outlined" 
+                color="inherit" 
+                startIcon={<Download />}
+                onClick={handleExportClick}
+              >
+                Exporter
+              </Button>
+              <IconButton 
+                color="inherit"
+                onClick={handleMenuOpen}
+                size="small"
+                sx={{ ml: 1 }}
+              >
+                <MenuIcon />
+              </IconButton>
+              <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleMenuClose}
+              >
+                <MenuItem onClick={handleAboutClick}>
+                  <Info size={18} style={{ marginRight: '8px' }} />
+                  À propos
+                </MenuItem>
+                <MenuItem onClick={handleHelpClick}>
+                  <HelpCircle size={18} style={{ marginRight: '8px' }} />
+                  Aide
+                </MenuItem>
+                <Divider />
+                <MenuItem onClick={handleLogout}>
+                  <LogOut size={18} style={{ marginRight: '8px' }} />
+                  Déconnexion
+                </MenuItem>
+              </Menu>
+            </Box>
+          )}
+        </Toolbar>
+      </AppBar>
+      
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        accept="application/pdf"
+        onChange={handleFileUpload}
+      />
+      
+      <Dialog open={aboutDialogOpen} onClose={() => setAboutDialogOpen(false)}>
+        <DialogTitle>À propos de PlanCam</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            PlanCam est une application de gestion de caméras de vidéoprotection sur plans PDF.
+            <br /><br />
+            Version: 1.0.0
+            <br />
+            © 2023 XCEL Vidéo
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAboutDialogOpen(false)}>Fermer</Button>
+        </DialogActions>
+      </Dialog>
+      
+      <Dialog open={helpDialogOpen} onClose={() => setHelpDialogOpen(false)}>
+        <DialogTitle>Aide</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            <strong>Comment utiliser PlanCam:</strong>
+            <br /><br />
+            1. Chargez un plan PDF avec le bouton "Charger PDF"
+            <br />
+            2. Cliquez sur le plan pour ajouter des caméras
+            <br />
+            3. Sélectionnez une caméra pour modifier ses propriétés
+            <br />
+            4. Utilisez le bouton "Exporter" pour sauvegarder votre plan avec les caméras
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHelpDialogOpen(false)}>Fermer</Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 };
 
