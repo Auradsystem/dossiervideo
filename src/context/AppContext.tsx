@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
 
 interface AppContextType {
@@ -133,14 +134,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const pdfCanvas = document.querySelector('canvas');
       if (!pdfCanvas) return;
       
-      // Create a canvas to render the PDF with cameras
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      // Create a temporary canvas to render the PDF with cameras
+      const tempCanvas = document.createElement('canvas');
+      const ctx = tempCanvas.getContext('2d');
       if (!ctx) return;
       
       // Set canvas dimensions to match the PDF canvas exactly
-      canvas.width = pdfCanvas.width;
-      canvas.height = pdfCanvas.height;
+      tempCanvas.width = pdfCanvas.width;
+      tempCanvas.height = pdfCanvas.height;
       
       // Draw the PDF exactly as it appears in the viewer
       ctx.drawImage(pdfCanvas, 0, 0);
@@ -184,19 +185,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ctx.restore();
       });
       
-      // Convert canvas to blob and download as PNG to preserve exact layout
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `plancam_export_${new Date().toISOString().slice(0, 10)}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 'image/png');
+      // Get the image data from the canvas
+      const imageData = tempCanvas.toDataURL('image/png');
+      
+      // Create a new PDF with the same dimensions as the canvas
+      // Determine orientation based on width/height ratio
+      const orientation = tempCanvas.width > tempCanvas.height ? 'landscape' : 'portrait';
+      
+      // Create PDF with appropriate dimensions
+      const pdf = new jsPDF({
+        orientation: orientation,
+        unit: 'px',
+        format: [tempCanvas.width, tempCanvas.height]
+      });
+      
+      // Add the image to the PDF, preserving the exact dimensions and orientation
+      pdf.addImage(
+        imageData, 
+        'PNG', 
+        0, 
+        0, 
+        tempCanvas.width, 
+        tempCanvas.height
+      );
+      
+      // Save the PDF
+      pdf.save(`plancam_export_${new Date().toISOString().slice(0, 10)}.pdf`);
       
     } catch (error) {
       console.error('Error exporting PDF:', error);
