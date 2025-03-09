@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Camera, CameraType } from '../types/Camera';
+import { Camera, CameraType, cameraIcons } from '../types/Camera';
 
 interface AppContextType {
   pdfFile: File | null;
@@ -25,6 +25,8 @@ interface AppContextType {
   setNamingPattern: (pattern: string) => void;
   nextCameraNumber: number;
   setNextCameraNumber: (num: number) => void;
+  selectedIconType: string;
+  setSelectedIconType: (type: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -39,6 +41,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [namingPattern, setNamingPattern] = useState<string>("CAM-");
   const [nextCameraNumber, setNextCameraNumber] = useState<number>(1);
+  const [selectedIconType, setSelectedIconType] = useState<string>("hikvision");
 
   // Check for existing authentication on mount
   useEffect(() => {
@@ -72,12 +75,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       name: newCameraName,
       x,
       y,
-      width: 50,
-      height: 50,
+      width: 30, // Taille réduite par défaut
+      height: 30, // Taille réduite par défaut
       angle: 45,
       viewDistance: 100,
-      opacity: 0.7, // More opaque by default
-      type
+      opacity: 0.9, // Plus opaque par défaut
+      type: selectedIconType as CameraType, // Utiliser le type d'icône sélectionné
+      iconPath: type === 'custom' ? cameraIcons[selectedIconType]?.path : undefined
     };
     
     setCameras([...cameras, newCamera]);
@@ -146,7 +150,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ctx.save();
         ctx.translate(camera.x, camera.y);
         
-        // Draw view angle
+        // Draw view angle - maintenant en rouge
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.arc(0, 0, camera.viewDistance, 
@@ -154,28 +158,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 Math.PI * camera.angle / 360, 
                 false);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
         ctx.stroke();
         
         // Draw camera icon
         ctx.beginPath();
         ctx.arc(0, 0, camera.width / 2, 0, Math.PI * 2);
         
-        switch (camera.type) {
-          case 'dome':
-            ctx.fillStyle = 'rgba(25, 118, 210, 0.8)';
-            break;
-          case 'bullet':
-            ctx.fillStyle = 'rgba(220, 0, 78, 0.8)';
-            break;
-          case 'ptz':
-            ctx.fillStyle = 'rgba(76, 175, 80, 0.8)';
-            break;
-          default:
-            ctx.fillStyle = 'rgba(25, 118, 210, 0.8)';
-        }
+        // Utiliser la couleur correspondant au type de caméra
+        const iconData = cameraIcons[camera.type] || cameraIcons.dome;
+        ctx.fillStyle = iconData.color;
         
         ctx.fill();
         ctx.strokeStyle = '#000';
@@ -232,7 +226,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       namingPattern,
       setNamingPattern,
       nextCameraNumber,
-      setNextCameraNumber
+      setNextCameraNumber,
+      selectedIconType,
+      setSelectedIconType
     }}>
       {children}
     </AppContext.Provider>

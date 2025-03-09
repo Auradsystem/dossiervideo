@@ -16,11 +16,14 @@ import {
   MenuItem,
   TextField,
   Button,
-  IconButton
+  IconButton,
+  Grid,
+  Paper,
+  Tooltip
 } from '@mui/material';
 import { Camera, CameraOff, Maximize, Minimize, RotateCcw, Eye, Trash2, Settings } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { CameraType } from '../types/Camera';
+import { CameraType, cameraIcons } from '../types/Camera';
 
 const drawerWidth = 280;
 
@@ -35,7 +38,9 @@ const Sidebar: React.FC = () => {
     namingPattern,
     setNamingPattern,
     nextCameraNumber,
-    setNextCameraNumber
+    setNextCameraNumber,
+    selectedIconType,
+    setSelectedIconType
   } = useAppContext();
 
   const selectedCameraData = cameras.find(cam => cam.id === selectedCamera);
@@ -87,6 +92,61 @@ const Sidebar: React.FC = () => {
     }
   };
 
+  const handleIconSelect = (iconType: string) => {
+    setSelectedIconType(iconType);
+    if (selectedCamera) {
+      updateCamera(selectedCamera, { 
+        type: iconType as CameraType,
+        iconPath: cameraIcons[iconType]?.path
+      });
+    }
+  };
+
+  // Composant pour afficher une icône de caméra dans la banque d'icônes
+  const CameraIconPreview = ({ type, name }: { type: string, name: string }) => {
+    const iconData = cameraIcons[type as keyof typeof cameraIcons];
+    const isSelected = selectedIconType === type;
+    
+    return (
+      <Tooltip title={name}>
+        <Paper 
+          elevation={isSelected ? 8 : 1}
+          sx={{ 
+            p: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center',
+            cursor: 'pointer',
+            border: isSelected ? `2px solid ${iconData.color}` : '2px solid transparent',
+            bgcolor: isSelected ? 'rgba(0,0,0,0.05)' : 'white'
+          }}
+          onClick={() => handleIconSelect(type)}
+        >
+          <Box 
+            sx={{ 
+              width: 32, 
+              height: 32, 
+              borderRadius: '50%', 
+              bgcolor: iconData.color,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              color: 'white',
+              mb: 0.5
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path d={iconData.path} fill="white" />
+            </svg>
+          </Box>
+          <Typography variant="caption" noWrap sx={{ fontSize: '0.65rem' }}>
+            {name}
+          </Typography>
+        </Paper>
+      </Tooltip>
+    );
+  };
+
   return (
     <Drawer
       variant="permanent"
@@ -105,7 +165,7 @@ const Sidebar: React.FC = () => {
         </Typography>
         <List>
           <ListItem disablePadding>
-            <ListItemButton onClick={() => addCamera(100, 100, 'dome')}>
+            <ListItemButton onClick={() => addCamera(100, 100, selectedIconType as CameraType)}>
               <ListItemIcon>
                 <Camera size={20} />
               </ListItemIcon>
@@ -136,6 +196,42 @@ const Sidebar: React.FC = () => {
               inputProps={{ min: 1 }}
             />
           </Box>
+        </Box>
+        
+        {/* Banque d'icônes */}
+        <Box sx={{ mt: 2, p: 1, bgcolor: 'background.paper', borderRadius: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Banque d'icônes
+          </Typography>
+          <Grid container spacing={1}>
+            <Grid item xs={4}>
+              <CameraIconPreview type="hikvision" name="Hikvision" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="dahua" name="Dahua" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="axis" name="Axis" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="dome" name="Dôme" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="bullet" name="Bullet" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="ptz" name="PTZ" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="fisheye" name="Fisheye" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="turret" name="Turret" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="thermal" name="Thermique" />
+            </Grid>
+          </Grid>
         </Box>
       </Box>
       
@@ -168,7 +264,21 @@ const Sidebar: React.FC = () => {
                 onClick={() => setSelectedCamera(camera.id)}
               >
                 <ListItemIcon>
-                  <Camera size={20} />
+                  <Box 
+                    sx={{ 
+                      width: 24, 
+                      height: 24, 
+                      borderRadius: '50%', 
+                      bgcolor: cameraIcons[camera.type]?.color || '#1976d2',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                      <path d={cameraIcons[camera.type]?.path || cameraIcons.dome.path} fill="white" />
+                    </svg>
+                  </Box>
                 </ListItemIcon>
                 <ListItemText primary={camera.name} />
               </ListItemButton>
@@ -207,9 +317,16 @@ const Sidebar: React.FC = () => {
               label="Type de caméra"
               onChange={handleCameraTypeChange}
             >
+              <MenuItem value="hikvision">Hikvision</MenuItem>
+              <MenuItem value="dahua">Dahua</MenuItem>
+              <MenuItem value="axis">Axis</MenuItem>
               <MenuItem value="dome">Dôme</MenuItem>
               <MenuItem value="bullet">Bullet</MenuItem>
               <MenuItem value="ptz">PTZ</MenuItem>
+              <MenuItem value="fisheye">Fisheye</MenuItem>
+              <MenuItem value="turret">Turret</MenuItem>
+              <MenuItem value="thermal">Thermique</MenuItem>
+              <MenuItem value="multisensor">Multi-capteurs</MenuItem>
             </Select>
           </FormControl>
           
