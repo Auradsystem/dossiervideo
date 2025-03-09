@@ -3,17 +3,12 @@ import { Stage, Layer, Image as KonvaImage } from 'react-konva';
 import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
 import CommentObject from './CommentObject';
-// Importation dynamique pour éviter les problèmes de build
-import * as pdfjs from 'pdfjs-dist';
 import CommentForm from './CommentForm';
 import { Box, IconButton, Tooltip } from '@mui/material';
 import AddCommentIcon from '@mui/icons-material/AddComment';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LogoObject from './LogoObject';
 import LogoSelector from './LogoSelector';
-
-// Configuration du worker PDF.js
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // Importation dynamique des composants react-pdf
 const PDFComponents = React.lazy(() => import('./PDFComponents'));
@@ -50,6 +45,7 @@ const PdfViewer: React.FC = () => {
   const [commentPosition, setCommentPosition] = useState<{ x: number, y: number } | null>(null);
   const [logoSelectorOpen, setLogoSelectorOpen] = useState(false);
   const [logoPosition, setLogoPosition] = useState<{ x: number, y: number } | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,28 +66,42 @@ const PdfViewer: React.FC = () => {
 
   // Fonction pour gérer le chargement réussi d'une page PDF
   const handlePageLoadSuccess = (page: any) => {
-    const viewport = page._transport._pageInfo.view;
-    const width = viewport[2];
-    const height = viewport[3];
-    
-    setPdfDimensions({ width, height });
-    
-    // Ajuster l'échelle en fonction de la taille du conteneur
-    if (containerRef.current) {
-      const containerWidth = containerRef.current.clientWidth;
-      const newScale = containerWidth / width * 0.9;
-      setScale(Math.min(newScale, 1));
-    }
-    
-    // Capturer l'image du canvas PDF
-    setTimeout(() => {
-      const canvas = document.querySelector('.react-pdf__Page__canvas') as HTMLCanvasElement;
-      if (canvas) {
-        const img = new Image();
-        img.src = canvas.toDataURL();
-        img.onload = () => setImage(img);
+    try {
+      // Réinitialiser l'erreur si le chargement réussit
+      setPdfError(null);
+      
+      const viewport = page._transport._pageInfo.view;
+      const width = viewport[2];
+      const height = viewport[3];
+      
+      setPdfDimensions({ width, height });
+      
+      // Ajuster l'échelle en fonction de la taille du conteneur
+      if (containerRef.current) {
+        const containerWidth = containerRef.current.clientWidth;
+        const newScale = containerWidth / width * 0.9;
+        setScale(Math.min(newScale, 1));
       }
-    }, 100);
+      
+      // Capturer l'image du canvas PDF
+      setTimeout(() => {
+        const canvas = document.querySelector('.react-pdf__Page__canvas') as HTMLCanvasElement;
+        if (canvas) {
+          const img = new Image();
+          img.src = canvas.toDataURL();
+          img.onload = () => setImage(img);
+        }
+      }, 100);
+    } catch (error) {
+      console.error("Erreur lors du chargement de la page PDF:", error);
+      setPdfError("Erreur lors du chargement de la page PDF");
+    }
+  };
+
+  // Fonction pour gérer les erreurs de chargement PDF
+  const handlePdfLoadError = (error: Error) => {
+    console.error("Erreur de chargement du PDF:", error);
+    setPdfError(`Erreur de chargement du PDF: ${error.message}`);
   };
 
   // Fonction pour gérer le clic sur le stage
@@ -179,6 +189,21 @@ const PdfViewer: React.FC = () => {
               height={pdfDimensions.height * scale}
             />
           </React.Suspense>
+          
+          {pdfError && (
+            <Box sx={{ 
+              position: 'absolute', 
+              top: '50%', 
+              left: '50%', 
+              transform: 'translate(-50%, -50%)',
+              bgcolor: 'error.light',
+              color: 'error.contrastText',
+              p: 2,
+              borderRadius: 1
+            }}>
+              {pdfError}
+            </Box>
+          )}
           
           {image && (
             <Stage
