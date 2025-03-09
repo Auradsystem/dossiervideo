@@ -66,8 +66,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     console.log(`Page actuelle: ${page}`);
     console.log(`Nombre de caméras sur cette page: ${cameras.length}`);
-    console.log('État des caméras par page:', pageCameras);
-  }, [page, cameras, pageCameras]);
+  }, [page, cameras]);
 
   // Réinitialiser la sélection lors du changement de page
   useEffect(() => {
@@ -115,15 +114,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       name: newCameraName,
       x,
       y,
-      width: 30, // Taille réduite par défaut
-      height: 30, // Taille réduite par défaut
+      width: 30,
+      height: 30,
       angle: 45,
       viewDistance: 100,
-      opacity: 0.9, // Plus opaque par défaut
-      type: selectedIconType as CameraType, // Utiliser le type d'icône sélectionné
+      opacity: 0.9,
+      type: selectedIconType as CameraType,
       iconPath: type === 'custom' ? cameraIcons[selectedIconType]?.path : undefined,
-      rotation: 0, // Ajout d'une propriété de rotation explicite
-      page: page // Stocker la page à laquelle appartient cette caméra
+      rotation: 0,
+      page: page
     };
     
     // Ajouter la caméra à la page courante
@@ -203,65 +202,67 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     console.log(`Toutes les caméras de la page ${page} ont été supprimées`);
   };
 
-  // Fonction pour capturer l'état exact du canvas Konva
-  const captureKonvaStage = (): Promise<HTMLCanvasElement | null> => {
+  // Fonction pour capturer l'état exact du canvas avec les caméras
+  const captureCanvas = async (): Promise<HTMLCanvasElement | null> => {
     return new Promise((resolve) => {
-      // Trouver le stage Konva
-      const stage = document.querySelector('.konvajs-content canvas');
-      if (!stage) {
-        console.error('Stage Konva non trouvé');
+      // Trouver le canvas du PDF et le canvas Konva
+      const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
+      const konvaCanvas = document.querySelector('.konvajs-content canvas');
+      
+      if (!pdfCanvas || !konvaCanvas) {
+        console.error('Canvas non trouvés');
         resolve(null);
         return;
       }
-
-      // Créer un canvas temporaire pour combiner le PDF et le stage Konva
+      
+      // Créer un canvas temporaire pour combiner les deux
       const tempCanvas = document.createElement('canvas');
       const ctx = tempCanvas.getContext('2d');
+      
       if (!ctx) {
         console.error('Impossible de créer un contexte 2D');
         resolve(null);
         return;
       }
-
-      // Obtenir le canvas du PDF
-      const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
-      if (!pdfCanvas) {
-        console.error('Canvas PDF non trouvé');
-        resolve(null);
-        return;
-      }
-
+      
       // Définir les dimensions du canvas temporaire
       tempCanvas.width = pdfCanvas.width;
       tempCanvas.height = pdfCanvas.height;
-
+      
       // Dessiner d'abord le PDF
       ctx.drawImage(pdfCanvas, 0, 0);
-
-      // Puis dessiner le stage Konva par-dessus
-      ctx.drawImage(stage, 0, 0);
-
-      resolve(tempCanvas);
+      
+      // Puis dessiner le canvas Konva par-dessus
+      ctx.drawImage(konvaCanvas, 0, 0);
+      
+      // Attendre un peu pour s'assurer que le rendu est terminé
+      setTimeout(() => {
+        resolve(tempCanvas);
+      }, 100);
     });
   };
 
-  // Fonction pour générer le PDF d'une page spécifique
-  const generatePagePdf = async (pageNumber: number): Promise<Blob | null> => {
-    if (!pdfFile) return null;
+  // Fonction pour prévisualiser le PDF de la page courante
+  const previewPdf = async () => {
+    console.log(`Prévisualisation du PDF pour la page ${page}`);
+    
+    // Nettoyer l'URL précédente si elle existe
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
     
     try {
-      console.log(`Génération du PDF pour la page ${pageNumber}`);
+      // Capturer le canvas combiné
+      const combinedCanvas = await captureCanvas();
       
-      // Capturer l'état exact du canvas Konva
-      const combinedCanvas = await captureKonvaStage();
       if (!combinedCanvas) {
         console.error('Échec de la capture du canvas');
-        return null;
+        return;
       }
       
       // Déterminer l'orientation en fonction du ratio largeur/hauteur
       const orientation = combinedCanvas.width > combinedCanvas.height ? 'landscape' : 'portrait';
-      console.log(`Orientation détectée: ${orientation}`);
       
       // Créer le PDF avec les dimensions appropriées
       const pdf = new jsPDF({
@@ -278,7 +279,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Obtenir les données d'image du canvas avec une haute qualité
       const imageData = combinedCanvas.toDataURL('image/jpeg', 1.0);
       
-      // Ajouter l'image au PDF, en préservant les dimensions et l'orientation exactes
+      // Ajouter l'image au PDF
       pdf.addImage({
         imageData: imageData,
         format: 'JPEG',
@@ -289,35 +290,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         compression: 'NONE'
       });
       
-      // Retourner le PDF sous forme de blob
+      // Générer le blob et créer une URL
       const pdfBlob = pdf.output('blob');
-      console.log(`PDF généré avec succès pour la page ${pageNumber}`);
-      return pdfBlob;
-      
-    } catch (error) {
-      console.error(`Erreur lors de la génération du PDF pour la page ${pageNumber}:`, error);
-      return null;
-    }
-  };
-
-  // Fonction pour prévisualiser le PDF de la page courante
-  const previewPdf = async () => {
-    console.log(`Prévisualisation du PDF pour la page ${page}`);
-    
-    // Nettoyer l'URL précédente si elle existe
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
-    
-    const pdfBlob = await generatePagePdf(page);
-    if (pdfBlob) {
       const url = URL.createObjectURL(pdfBlob);
+      
       setPreviewUrl(url);
       setIsPreviewOpen(true);
+      
       console.log('URL de prévisualisation créée');
-    } else {
-      console.error('Échec de la génération du PDF pour la prévisualisation');
+    } catch (error) {
+      console.error('Erreur lors de la génération de la prévisualisation:', error);
     }
   };
 
@@ -325,28 +307,54 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const exportCurrentPage = async () => {
     console.log(`Export du PDF pour la page ${page}`);
     
-    const pdfBlob = await generatePagePdf(page);
-    if (pdfBlob) {
-      const url = URL.createObjectURL(pdfBlob);
+    try {
+      // Capturer le canvas combiné
+      const combinedCanvas = await captureCanvas();
       
-      // Créer un lien temporaire pour télécharger le fichier
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `plancam_page${page}_${new Date().toISOString().slice(0, 10)}.pdf`;
-      link.click();
+      if (!combinedCanvas) {
+        console.error('Échec de la capture du canvas');
+        return;
+      }
       
-      // Nettoyer l'URL
-      setTimeout(() => {
-        URL.revokeObjectURL(url);
-      }, 100);
+      // Déterminer l'orientation en fonction du ratio largeur/hauteur
+      const orientation = combinedCanvas.width > combinedCanvas.height ? 'landscape' : 'portrait';
       
-      console.log('PDF téléchargé avec succès');
-    } else {
-      console.error('Échec de la génération du PDF pour l\'export');
+      // Créer le PDF avec les dimensions appropriées
+      const pdf = new jsPDF({
+        orientation: orientation,
+        unit: 'px',
+        format: [combinedCanvas.width, combinedCanvas.height],
+        hotfixes: ['px_scaling']
+      });
+      
+      // Calculer les dimensions du PDF en points
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      // Obtenir les données d'image du canvas avec une haute qualité
+      const imageData = combinedCanvas.toDataURL('image/jpeg', 1.0);
+      
+      // Ajouter l'image au PDF
+      pdf.addImage({
+        imageData: imageData,
+        format: 'JPEG',
+        x: 0,
+        y: 0,
+        width: pdfWidth,
+        height: pdfHeight,
+        compression: 'NONE'
+      });
+      
+      // Télécharger le PDF
+      pdf.save(`plancam_page${page}_${new Date().toISOString().slice(0, 10)}.pdf`);
+      
+      console.log('PDF exporté avec succès');
+    } catch (error) {
+      console.error('Erreur lors de l\'export du PDF:', error);
     }
   };
 
-  // Fonction pour exporter toutes les pages en un seul PDF
+  // Nouvelle fonction pour exporter toutes les pages en un seul PDF
   const exportPdf = async () => {
     console.log('Export de toutes les pages en un seul PDF');
     
@@ -359,66 +367,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Sauvegarder la page courante
       const currentPage = page;
       
+      // Récupérer les numéros de pages qui contiennent des caméras
+      const pageNumbers = Object.keys(pageCameras)
+        .map(Number)
+        .filter(pageNum => pageNum <= totalPages)
+        .sort((a, b) => a - b);
+      
+      if (pageNumbers.length === 0) {
+        alert('Aucune page avec des caméras à exporter');
+        return;
+      }
+      
       // Créer un nouveau PDF
       const mergedPdf = new jsPDF();
       let isFirstPage = true;
       
       // Pour chaque page qui contient des caméras
-      const pageNumbers = Object.keys(pageCameras).map(Number).sort((a, b) => a - b);
-      
-      if (pageNumbers.length === 0) {
-        console.error('Aucune page avec des caméras à exporter');
-        return;
-      }
-      
-      for (let i = 0; i < pageNumbers.length; i++) {
-        const pageNum = pageNumbers[i];
-        if (pageNum > totalPages) continue;
-        
+      for (const pageNum of pageNumbers) {
         console.log(`Traitement de la page ${pageNum} pour l'export complet`);
         
-        // Changer de page temporairement pour générer le PDF de cette page
+        // Changer de page
         setPage(pageNum);
         
         // Attendre que le rendu de la page soit terminé
+        // Cette attente est cruciale pour que le PDF soit correctement rendu
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Générer le PDF pour cette page
-        const pageBlob = await generatePagePdf(pageNum);
+        // Capturer le canvas de cette page
+        const combinedCanvas = await captureCanvas();
         
-        if (pageBlob) {
-          // Convertir le blob en base64
-          const reader = new FileReader();
-          
-          await new Promise<void>((resolve) => {
-            reader.onloadend = function() {
-              // Ajouter une nouvelle page si ce n'est pas la première
-              if (!isFirstPage) {
-                mergedPdf.addPage();
-              } else {
-                isFirstPage = false;
-              }
-              
-              // Extraire la base64 data
-              const base64data = reader.result as string;
-              const base64Clean = base64data.split(',')[1];
-              
-              // Créer un PDF temporaire à partir du blob
-              const tempPdf = new jsPDF();
-              tempPdf.loadFile(base64Clean);
-              
-              // Obtenir les dimensions du PDF temporaire
-              const pageWidth = tempPdf.internal.pageSize.getWidth();
-              const pageHeight = tempPdf.internal.pageSize.getHeight();
-              
-              // Ajouter l'image au PDF fusionné
-              mergedPdf.addImage(base64data, 'JPEG', 0, 0, pageWidth, pageHeight);
-              
-              resolve();
-            };
-            reader.readAsDataURL(pageBlob);
-          });
+        if (!combinedCanvas) {
+          console.error(`Échec de la capture du canvas pour la page ${pageNum}`);
+          continue;
         }
+        
+        // Déterminer l'orientation en fonction du ratio largeur/hauteur
+        const orientation = combinedCanvas.width > combinedCanvas.height ? 'landscape' : 'portrait';
+        
+        // Si ce n'est pas la première page, ajouter une nouvelle page au PDF
+        if (!isFirstPage) {
+          mergedPdf.addPage([combinedCanvas.width, combinedCanvas.height], orientation);
+        } else {
+          // Pour la première page, définir le format du PDF
+          mergedPdf.deletePage(1);
+          mergedPdf.addPage([combinedCanvas.width, combinedCanvas.height], orientation);
+          isFirstPage = false;
+        }
+        
+        // Obtenir les données d'image du canvas avec une haute qualité
+        const imageData = combinedCanvas.toDataURL('image/jpeg', 1.0);
+        
+        // Ajouter l'image à la page courante du PDF
+        const pdfWidth = mergedPdf.internal.pageSize.getWidth();
+        const pdfHeight = mergedPdf.internal.pageSize.getHeight();
+        
+        mergedPdf.addImage({
+          imageData: imageData,
+          format: 'JPEG',
+          x: 0,
+          y: 0,
+          width: pdfWidth,
+          height: pdfHeight,
+          compression: 'NONE'
+        });
+        
+        console.log(`Page ${pageNum} ajoutée au PDF`);
       }
       
       // Restaurer la page courante
@@ -431,6 +444,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
     } catch (error) {
       console.error('Erreur lors de l\'export complet:', error);
+      alert('Une erreur est survenue lors de l\'export. Veuillez réessayer.');
     }
   };
 

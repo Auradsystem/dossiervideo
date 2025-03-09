@@ -1,55 +1,39 @@
 import React, { useEffect, useRef } from 'react';
-import { Box, Dialog, DialogContent, DialogActions, Button, IconButton, Typography } from '@mui/material';
-import { X, Download, Printer } from 'lucide-react';
+import { Box, Dialog, DialogContent, DialogActions, Button, IconButton } from '@mui/material';
+import { X } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
-interface PdfPreviewProps {
-  open: boolean;
-  onClose: () => void;
-}
-
-const PdfPreview: React.FC<PdfPreviewProps> = ({ open, onClose }) => {
-  const { previewUrl, exportCurrentPage, page } = useAppContext();
+const PdfPreview: React.FC = () => {
+  const { previewUrl, isPreviewOpen, setIsPreviewOpen } = useAppContext();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Ajuster la taille de l'iframe au contenu
   useEffect(() => {
-    if (open && iframeRef.current && previewUrl) {
+    // Ajuster la taille de l'iframe quand le PDF est chargé
+    if (iframeRef.current && previewUrl) {
       const iframe = iframeRef.current;
       iframe.onload = () => {
         try {
-          // Essayer d'ajuster la hauteur de l'iframe au contenu
+          // Essayer d'ajuster l'iframe au contenu
           if (iframe.contentWindow) {
-            const height = iframe.contentWindow.document.body.scrollHeight;
-            iframe.style.height = `${height}px`;
+            iframe.style.height = `${iframe.contentWindow.document.body.scrollHeight}px`;
           }
         } catch (e) {
           console.error('Erreur lors de l\'ajustement de l\'iframe:', e);
         }
       };
     }
-  }, [open, previewUrl]);
+  }, [previewUrl]);
 
-  const handlePrint = () => {
-    if (iframeRef.current && iframeRef.current.contentWindow) {
-      console.log('Impression du PDF');
-      iframeRef.current.contentWindow.print();
-    }
+  const handleClose = () => {
+    setIsPreviewOpen(false);
   };
-
-  const handleDownload = () => {
-    console.log('Téléchargement du PDF depuis la prévisualisation');
-    exportCurrentPage();
-  };
-
-  if (!previewUrl) return null;
 
   return (
-    <Dialog 
-      open={open} 
-      onClose={onClose}
-      fullWidth
+    <Dialog
+      open={isPreviewOpen}
+      onClose={handleClose}
       maxWidth="lg"
+      fullWidth
       PaperProps={{
         sx: {
           height: '90vh',
@@ -61,39 +45,23 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({ open, onClose }) => {
     >
       <Box sx={{ 
         display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        p: 2,
-        borderBottom: '1px solid',
-        borderColor: 'divider'
+        justifyContent: 'flex-end', 
+        p: 1, 
+        borderBottom: '1px solid rgba(0, 0, 0, 0.12)'
       }}>
-        <Typography variant="h6">Aperçu de la page {page}</Typography>
-        <Box>
-          <IconButton onClick={handlePrint} title="Imprimer">
-            <Printer size={20} />
-          </IconButton>
-          <IconButton onClick={handleDownload} title="Télécharger">
-            <Download size={20} />
-          </IconButton>
-          <IconButton onClick={onClose} edge="end">
-            <X size={20} />
-          </IconButton>
-        </Box>
+        <IconButton onClick={handleClose} size="small">
+          <X size={20} />
+        </IconButton>
       </Box>
       
       <DialogContent sx={{ 
         p: 0, 
-        flexGrow: 1,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column'
+        flexGrow: 1, 
+        display: 'flex', 
+        flexDirection: 'column',
+        overflow: 'hidden'
       }}>
-        <Box sx={{ 
-          width: '100%', 
-          height: '100%', 
-          overflow: 'auto',
-          bgcolor: '#f0f0f0'
-        }}>
+        {previewUrl && (
           <iframe
             ref={iframeRef}
             src={previewUrl}
@@ -101,19 +69,16 @@ const PdfPreview: React.FC<PdfPreviewProps> = ({ open, onClose }) => {
               width: '100%',
               height: '100%',
               border: 'none',
-              display: 'block'
+              flexGrow: 1
             }}
-            title="Aperçu PDF"
+            title="PDF Preview"
           />
-        </Box>
+        )}
       </DialogContent>
       
-      <DialogActions sx={{ p: 2 }}>
-        <Button onClick={onClose} variant="outlined">
+      <DialogActions sx={{ borderTop: '1px solid rgba(0, 0, 0, 0.12)' }}>
+        <Button onClick={handleClose} color="primary">
           Fermer
-        </Button>
-        <Button onClick={handleDownload} variant="contained" color="primary" startIcon={<Download size={16} />}>
-          Télécharger
         </Button>
       </DialogActions>
     </Dialog>

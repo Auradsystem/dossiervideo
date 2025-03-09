@@ -1,399 +1,417 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Box, 
   Drawer, 
   List, 
   ListItem, 
-  ListItemButton, 
   ListItemIcon, 
   ListItemText, 
   Divider, 
+  Button, 
   Typography, 
-  TextField, 
-  Slider, 
-  IconButton,
-  Paper,
-  InputAdornment,
+  TextField,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Badge
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import { 
+  Upload, 
+  Download, 
+  Eye, 
   Camera, 
-  Sliders, 
-  Trash2, 
-  RotateCw, 
-  ChevronLeft, 
-  ChevronRight,
-  Eye,
-  Layers
+  Settings, 
+  Edit3, 
+  Trash2,
+  Save
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { CameraType, cameraIcons } from '../types/Camera';
 
-const drawerWidth = 280;
+// Largeur du sidebar
+const drawerWidth = 240;
 
 const Sidebar: React.FC = () => {
   const { 
-    cameras, 
+    pdfFile, 
+    setPdfFile, 
     selectedCamera, 
-    setSelectedCamera, 
     updateCamera, 
     deleteCamera,
+    exportPdf,
+    exportCurrentPage,
+    previewPdf,
+    namingPattern,
+    setNamingPattern,
+    nextCameraNumber,
+    setNextCameraNumber,
     selectedIconType,
-    setSelectedIconType,
-    page,
-    totalPages
+    setSelectedIconType
   } = useAppContext();
   
-  const [open, setOpen] = useState(true);
-  
-  const selectedCameraObj = cameras.find(cam => cam.id === selectedCamera);
-  
-  const handleToggleDrawer = () => {
-    setOpen(!open);
-  };
-  
-  const handleCameraTypeChange = (event: React.ChangeEvent<{ value: unknown }>) => {
-    const newType = event.target.value as string;
-    console.log(`Type d'icône sélectionné: ${newType}`);
-    setSelectedIconType(newType);
-    
-    // Si une caméra est sélectionnée, mettre à jour son type
-    if (selectedCamera) {
-      updateCamera(selectedCamera, {
-        type: newType as CameraType,
-        iconPath: cameraIcons[newType]?.path
-      });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Gérer le chargement d'un fichier PDF
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type === 'application/pdf') {
+        setPdfFile(file);
+        console.log('PDF chargé:', file.name);
+      } else {
+        alert('Veuillez sélectionner un fichier PDF valide.');
+      }
     }
   };
-  
-  const handleDeleteCamera = () => {
-    if (selectedCamera && window.confirm('Êtes-vous sûr de vouloir supprimer cette caméra ?')) {
-      console.log(`Suppression de la caméra: ${selectedCamera}`);
-      deleteCamera(selectedCamera);
+
+  // Déclencher le clic sur l'input file caché
+  const handleUploadClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
     }
   };
-  
-  const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+
+  // Gérer la mise à jour du nom de la caméra sélectionnée
+  const handleCameraNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedCamera) {
-      console.log(`Nom de la caméra modifié: ${event.target.value}`);
       updateCamera(selectedCamera, { name: event.target.value });
     }
   };
-  
-  const handleAngleChange = (_: Event, newValue: number | number[]) => {
+
+  // Gérer la mise à jour de l'angle de vue de la caméra
+  const handleViewAngleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedCamera) {
-      const angle = newValue as number;
-      console.log(`Angle de la caméra modifié: ${angle}°`);
-      updateCamera(selectedCamera, { angle });
+      const angle = Number(event.target.value);
+      if (!isNaN(angle) && angle >= 0 && angle <= 360) {
+        updateCamera(selectedCamera, { angle });
+      }
     }
   };
-  
-  const handleViewDistanceChange = (_: Event, newValue: number | number[]) => {
+
+  // Gérer la mise à jour de la distance de vue de la caméra
+  const handleViewDistanceChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedCamera) {
-      const viewDistance = newValue as number;
-      console.log(`Distance de vue modifiée: ${viewDistance}`);
-      updateCamera(selectedCamera, { viewDistance });
+      const viewDistance = Number(event.target.value);
+      if (!isNaN(viewDistance) && viewDistance >= 0) {
+        updateCamera(selectedCamera, { viewDistance });
+      }
     }
   };
-  
-  const handleOpacityChange = (_: Event, newValue: number | number[]) => {
+
+  // Gérer la mise à jour de l'opacité de la caméra
+  const handleOpacityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedCamera) {
-      const opacity = newValue as number;
-      console.log(`Opacité modifiée: ${opacity}`);
-      updateCamera(selectedCamera, { opacity });
+      const opacity = Number(event.target.value);
+      if (!isNaN(opacity) && opacity >= 0 && opacity <= 1) {
+        updateCamera(selectedCamera, { opacity });
+      }
     }
   };
-  
-  const handleRotationChange = (_: Event, newValue: number | number[]) => {
+
+  // Gérer la mise à jour du type de caméra
+  const handleCameraTypeChange = (event: React.ChangeEvent<{ value: unknown }>) => {
     if (selectedCamera) {
-      const rotation = newValue as number;
-      console.log(`Rotation modifiée: ${rotation}°`);
-      updateCamera(selectedCamera, { rotation });
+      updateCamera(selectedCamera, { type: event.target.value as any });
     }
   };
+
+  // Gérer la suppression de la caméra sélectionnée
+  const handleDeleteCamera = () => {
+    if (selectedCamera && window.confirm('Êtes-vous sûr de vouloir supprimer cette caméra ?')) {
+      deleteCamera(selectedCamera);
+    }
+  };
+
+  // Ouvrir la boîte de dialogue des paramètres
+  const handleOpenSettings = () => {
+    setIsSettingsOpen(true);
+  };
+
+  // Fermer la boîte de dialogue des paramètres
+  const handleCloseSettings = () => {
+    setIsSettingsOpen(false);
+  };
+
+  // Sauvegarder les paramètres
+  const handleSaveSettings = () => {
+    setIsSettingsOpen(false);
+    // Les paramètres sont déjà sauvegardés via les états React
+  };
+
+  // Obtenir les détails de la caméra sélectionnée
+  const getSelectedCameraDetails = () => {
+    if (!selectedCamera) return null;
+    
+    const camera = useAppContext().cameras.find(cam => cam.id === selectedCamera);
+    return camera;
+  };
+
+  const selectedCameraDetails = getSelectedCameraDetails();
 
   return (
     <>
       <Drawer
-        variant="persistent"
-        anchor="left"
-        open={open}
+        variant="permanent"
         sx={{
           width: drawerWidth,
           flexShrink: 0,
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
+            borderRight: '1px solid rgba(0, 0, 0, 0.12)',
           },
         }}
       >
-        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="h6" component="div">
-            Outils
-          </Typography>
-          <IconButton onClick={handleToggleDrawer}>
-            <ChevronLeft />
-          </IconButton>
-        </Box>
-        
-        <Divider />
-        
-        <Box sx={{ p: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Type de caméra
-          </Typography>
-          <FormControl fullWidth size="small" margin="dense">
-            <InputLabel id="camera-type-label">Type</InputLabel>
-            <Select
-              labelId="camera-type-label"
-              value={selectedIconType}
-              label="Type"
-              onChange={handleCameraTypeChange as any}
-            >
-              {Object.entries(cameraIcons).map(([type, data]) => (
-                <MenuItem key={type} value={type}>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Box 
-                      sx={{ 
-                        width: 16, 
-                        height: 16, 
-                        borderRadius: '50%', 
-                        bgcolor: data.color,
-                        mr: 1
-                      }} 
-                    />
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontSize: '0.75rem' }}>
-            Cliquez sur le plan pour ajouter une caméra
-          </Typography>
-        </Box>
-        
-        <Divider />
-        
-        <Box sx={{ p: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-            <Badge 
-              badgeContent={cameras.length} 
-              color="primary"
-              sx={{ mr: 1 }}
-            >
-              <Layers size={20} />
-            </Badge>
-            <Typography variant="subtitle2">
-              Caméras sur la page {page}
-            </Typography>
-          </Box>
-          
-          {cameras.length > 0 ? (
-            <List dense disablePadding>
-              {cameras.map(camera => (
-                <ListItem 
-                  key={camera.id} 
-                  disablePadding
-                  secondaryAction={
-                    <IconButton 
-                      edge="end" 
-                      size="small"
-                      onClick={() => {
-                        console.log(`Sélection de la caméra: ${camera.id}`);
-                        setSelectedCamera(camera.id);
-                      }}
-                    >
-                      <Eye size={16} />
-                    </IconButton>
-                  }
-                >
-                  <ListItemButton 
-                    selected={selectedCamera === camera.id}
-                    onClick={() => {
-                      console.log(`Sélection de la caméra: ${camera.id}`);
-                      setSelectedCamera(camera.id);
-                    }}
-                    sx={{ borderRadius: 1 }}
-                  >
-                    <ListItemIcon sx={{ minWidth: 36 }}>
-                      <Box 
-                        sx={{ 
-                          width: 16, 
-                          height: 16, 
-                          borderRadius: '50%', 
-                          bgcolor: cameraIcons[camera.type]?.color || '#1976d2'
-                        }} 
-                      />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary={camera.name} 
-                      primaryTypographyProps={{ 
-                        variant: 'body2',
-                        noWrap: true
-                      }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
-          ) : (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontSize: '0.875rem' }}>
-              Aucune caméra sur cette page
-            </Typography>
-          )}
-        </Box>
-        
-        <Divider />
-        
-        {selectedCameraObj ? (
-          <Box sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="subtitle2">
-                Propriétés de la caméra
+        <Box sx={{ overflow: 'auto' }}>
+          <List>
+            <ListItem>
+              <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                PlanCam
               </Typography>
-              <IconButton 
-                size="small" 
-                color="error" 
-                onClick={handleDeleteCamera}
-                title="Supprimer la caméra"
+            </ListItem>
+            
+            <Divider />
+            
+            {/* Section Fichier */}
+            <ListItem>
+              <Typography variant="subtitle2" color="text.secondary">
+                FICHIER
+              </Typography>
+            </ListItem>
+            
+            <ListItem>
+              <Button
+                variant="outlined"
+                startIcon={<Upload size={16} />}
+                onClick={handleUploadClick}
+                fullWidth
+                size="small"
               >
-                <Trash2 size={16} />
-              </IconButton>
-            </Box>
-            
-            <TextField
-              label="Nom"
-              value={selectedCameraObj.name}
-              onChange={handleNameChange}
-              fullWidth
-              margin="dense"
-              size="small"
-            />
-            
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" gutterBottom display="flex" alignItems="center">
-                <RotateCw size={16} style={{ marginRight: 8 }} />
-                Rotation: {selectedCameraObj.rotation || 0}°
-              </Typography>
-              <Slider
-                value={selectedCameraObj.rotation || 0}
-                min={0}
-                max={360}
-                step={5}
-                onChange={handleRotationChange}
-                size="small"
+                Charger PDF
+              </Button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept="application/pdf"
+                style={{ display: 'none' }}
               />
-            </Box>
+            </ListItem>
             
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Angle de vue: {selectedCameraObj.angle}°
+            {pdfFile && (
+              <>
+                <ListItem>
+                  <Button
+                    variant="outlined"
+                    startIcon={<Eye size={16} />}
+                    onClick={previewPdf}
+                    fullWidth
+                    size="small"
+                    disabled={!pdfFile}
+                  >
+                    Prévisualiser
+                  </Button>
+                </ListItem>
+                
+                <ListItem>
+                  <Button
+                    variant="outlined"
+                    startIcon={<Download size={16} />}
+                    onClick={exportCurrentPage}
+                    fullWidth
+                    size="small"
+                    disabled={!pdfFile}
+                  >
+                    Exporter page
+                  </Button>
+                </ListItem>
+                
+                <ListItem>
+                  <Button
+                    variant="contained"
+                    startIcon={<Save size={16} />}
+                    onClick={exportPdf}
+                    fullWidth
+                    size="small"
+                    disabled={!pdfFile}
+                  >
+                    Exporter tout
+                  </Button>
+                </ListItem>
+              </>
+            )}
+            
+            <Divider sx={{ my: 1 }} />
+            
+            {/* Section Caméra */}
+            <ListItem>
+              <Typography variant="subtitle2" color="text.secondary">
+                CAMÉRA
               </Typography>
-              <Slider
-                value={selectedCameraObj.angle}
-                min={10}
-                max={120}
-                step={5}
-                onChange={handleAngleChange}
+            </ListItem>
+            
+            <ListItem>
+              <FormControl fullWidth size="small">
+                <InputLabel id="camera-type-label">Type de caméra</InputLabel>
+                <Select
+                  labelId="camera-type-label"
+                  value={selectedIconType}
+                  label="Type de caméra"
+                  onChange={(e) => setSelectedIconType(e.target.value)}
+                >
+                  <MenuItem value="dome">Dôme</MenuItem>
+                  <MenuItem value="bullet">Bullet</MenuItem>
+                  <MenuItem value="ptz">PTZ</MenuItem>
+                  <MenuItem value="fisheye">Fisheye</MenuItem>
+                </Select>
+              </FormControl>
+            </ListItem>
+            
+            <ListItem>
+              <Button
+                variant="outlined"
+                startIcon={<Settings size={16} />}
+                onClick={handleOpenSettings}
+                fullWidth
                 size="small"
-              />
-            </Box>
+              >
+                Paramètres
+              </Button>
+            </ListItem>
             
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Distance de vue: {selectedCameraObj.viewDistance}
-              </Typography>
-              <Slider
-                value={selectedCameraObj.viewDistance}
-                min={20}
-                max={300}
-                step={10}
-                onChange={handleViewDistanceChange}
-                size="small"
-              />
-            </Box>
-            
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Opacité: {selectedCameraObj.opacity.toFixed(1)}
-              </Typography>
-              <Slider
-                value={selectedCameraObj.opacity}
-                min={0.1}
-                max={1}
-                step={0.1}
-                onChange={handleOpacityChange}
-                size="small"
-              />
-            </Box>
-            
-            <Paper variant="outlined" sx={{ p: 1, mt: 2 }}>
-              <Typography variant="caption" display="block" gutterBottom>
-                Position
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <TextField
-                  label="X"
-                  value={Math.round(selectedCameraObj.x)}
-                  size="small"
-                  InputProps={{
-                    readOnly: true,
-                    startAdornment: <InputAdornment position="start">X:</InputAdornment>,
-                  }}
-                  variant="outlined"
-                  sx={{ width: '50%' }}
-                />
-                <TextField
-                  label="Y"
-                  value={Math.round(selectedCameraObj.y)}
-                  size="small"
-                  InputProps={{
-                    readOnly: true,
-                    startAdornment: <InputAdornment position="start">Y:</InputAdornment>,
-                  }}
-                  variant="outlined"
-                  sx={{ width: '50%' }}
-                />
-              </Box>
-            </Paper>
-          </Box>
-        ) : (
-          <Box sx={{ p: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              Sélectionnez une caméra pour modifier ses propriétés
-            </Typography>
-          </Box>
-        )}
+            {selectedCameraDetails && (
+              <>
+                <Divider sx={{ my: 1 }} />
+                
+                <ListItem>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    ÉDITION
+                  </Typography>
+                </ListItem>
+                
+                <ListItem>
+                  <TextField
+                    label="Nom"
+                    value={selectedCameraDetails.name}
+                    onChange={handleCameraNameChange}
+                    fullWidth
+                    size="small"
+                    variant="outlined"
+                  />
+                </ListItem>
+                
+                <ListItem>
+                  <FormControl fullWidth size="small">
+                    <InputLabel id="camera-edit-type-label">Type</InputLabel>
+                    <Select
+                      labelId="camera-edit-type-label"
+                      value={selectedCameraDetails.type}
+                      label="Type"
+                      onChange={handleCameraTypeChange}
+                    >
+                      <MenuItem value="dome">Dôme</MenuItem>
+                      <MenuItem value="bullet">Bullet</MenuItem>
+                      <MenuItem value="ptz">PTZ</MenuItem>
+                      <MenuItem value="fisheye">Fisheye</MenuItem>
+                    </Select>
+                  </FormControl>
+                </ListItem>
+                
+                <ListItem>
+                  <TextField
+                    label="Angle de vue (°)"
+                    type="number"
+                    value={selectedCameraDetails.angle}
+                    onChange={handleViewAngleChange}
+                    fullWidth
+                    size="small"
+                    variant="outlined"
+                    inputProps={{ min: 0, max: 360 }}
+                  />
+                </ListItem>
+                
+                <ListItem>
+                  <TextField
+                    label="Distance de vue"
+                    type="number"
+                    value={selectedCameraDetails.viewDistance}
+                    onChange={handleViewDistanceChange}
+                    fullWidth
+                    size="small"
+                    variant="outlined"
+                    inputProps={{ min: 0 }}
+                  />
+                </ListItem>
+                
+                <ListItem>
+                  <TextField
+                    label="Opacité"
+                    type="number"
+                    value={selectedCameraDetails.opacity}
+                    onChange={handleOpacityChange}
+                    fullWidth
+                    size="small"
+                    variant="outlined"
+                    inputProps={{ min: 0, max: 1, step: 0.1 }}
+                  />
+                </ListItem>
+                
+                <ListItem>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    startIcon={<Trash2 size={16} />}
+                    onClick={handleDeleteCamera}
+                    fullWidth
+                    size="small"
+                  >
+                    Supprimer
+                  </Button>
+                </ListItem>
+              </>
+            )}
+          </List>
+        </Box>
       </Drawer>
       
-      {!open && (
-        <Box
-          sx={{
-            position: 'fixed',
-            left: 0,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            zIndex: 1,
-          }}
-        >
-          <IconButton
-            onClick={handleToggleDrawer}
-            sx={{
-              bgcolor: 'background.paper',
-              borderRadius: '0 4px 4px 0',
-              boxShadow: 1,
-            }}
-          >
-            <ChevronRight />
-          </IconButton>
-        </Box>
-      )}
+      {/* Boîte de dialogue des paramètres */}
+      <Dialog open={isSettingsOpen} onClose={handleCloseSettings}>
+        <DialogTitle>Paramètres</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 1 }}>
+            <TextField
+              label="Modèle de nommage"
+              value={namingPattern}
+              onChange={(e) => setNamingPattern(e.target.value)}
+              fullWidth
+              margin="normal"
+              helperText="Préfixe utilisé pour nommer les caméras (ex: CAM-)"
+            />
+            
+            <TextField
+              label="Prochain numéro"
+              type="number"
+              value={nextCameraNumber}
+              onChange={(e) => setNextCameraNumber(Number(e.target.value))}
+              fullWidth
+              margin="normal"
+              inputProps={{ min: 1 }}
+              helperText="Numéro qui sera utilisé pour la prochaine caméra"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseSettings}>Annuler</Button>
+          <Button onClick={handleSaveSettings} variant="contained">Enregistrer</Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };
