@@ -14,6 +14,18 @@ interface PageComments {
   [pageNumber: number]: Comment[];
 }
 
+// Interface pour les logos
+export interface Logo {
+  id: string;
+  name: string;
+  url: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  page?: number;
+}
+
 interface AppContextType {
   pdfFile: File | null;
   setPdfFile: (file: File | null) => void;
@@ -46,18 +58,39 @@ interface AppContextType {
   selectedIconType: string;
   setSelectedIconType: (type: string) => void;
   clearCurrentPage: () => void;
-  // Nouvelles fonctionnalités pour les commentaires
+  // Fonctionnalités pour les commentaires
   comments: Comment[];
-  addComment: (x: number, y: number, text: string, cameraId?: string) => void;
+  addComment: (x: number, y: number, text: string, cameraId?: string, fontSize?: number) => void;
   updateComment: (id: string, updates: Partial<Comment>) => void;
   deleteComment: (id: string) => void;
   selectedComment: string | null;
   setSelectedComment: (id: string | null) => void;
   isAddingComment: boolean;
   setIsAddingComment: (isAdding: boolean) => void;
+  // Nouvelles fonctionnalités pour les logos
+  logos: Logo[];
+  addLogo: (logoId: string, x: number, y: number) => void;
+  updateLogo: (id: string, updates: Partial<Logo>) => void;
+  deleteLogo: (id: string) => void;
+  selectedLogo: string | null;
+  setSelectedLogo: (id: string | null) => void;
+  availableLogos: Logo[];
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+// Logos prédéfinis
+const predefinedLogos: Logo[] = [
+  {
+    id: 'xcel-security',
+    name: 'XCEL SECURITY SERVICES',
+    url: '/logo-xcel-security.png',
+    x: 0,
+    y: 0,
+    width: 150,
+    height: 50
+  }
+];
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -74,10 +107,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
   
-  // Nouveaux états pour les commentaires
+  // États pour les commentaires
   const [pageComments, setPageComments] = useState<PageComments>({});
   const [selectedComment, setSelectedComment] = useState<string | null>(null);
   const [isAddingComment, setIsAddingComment] = useState<boolean>(false);
+
+  // Nouveaux états pour les logos
+  const [pageLogos, setPageLogos] = useState<{ [pageNumber: number]: Logo[] }>({});
+  const [selectedLogo, setSelectedLogo] = useState<string | null>(null);
+  const [availableLogos] = useState<Logo[]>(predefinedLogos);
 
   // Caméras de la page courante
   const cameras = pageCameras[page] || [];
@@ -85,17 +123,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Commentaires de la page courante
   const comments = pageComments[page] || [];
 
+  // Logos de la page courante
+  const logos = pageLogos[page] || [];
+
   // Journalisation pour le débogage
   useEffect(() => {
     console.log(`Page actuelle: ${page}`);
     console.log(`Nombre de caméras sur cette page: ${cameras.length}`);
     console.log(`Nombre de commentaires sur cette page: ${comments.length}`);
-  }, [page, cameras, comments]);
+    console.log(`Nombre de logos sur cette page: ${logos.length}`);
+  }, [page, cameras, comments, logos]);
 
   // Réinitialiser la sélection lors du changement de page
   useEffect(() => {
     setSelectedCamera(null);
     setSelectedComment(null);
+    setSelectedLogo(null);
   }, [page]);
 
   // Check for existing authentication on mount
@@ -239,11 +282,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setPageComments(updatedPageComments);
     setSelectedComment(null);
     
-    console.log(`Toutes les caméras et commentaires de la page ${page} ont été supprimés`);
+    // Supprimer également tous les logos de la page
+    const updatedPageLogos = { ...pageLogos };
+    delete updatedPageLogos[page];
+    
+    setPageLogos(updatedPageLogos);
+    setSelectedLogo(null);
+    
+    console.log(`Toutes les caméras, commentaires et logos de la page ${page} ont été supprimés`);
   };
 
-  // Nouvelles fonctions pour gérer les commentaires
-  const addComment = (x: number, y: number, text: string, cameraId?: string) => {
+  // Fonctions pour gérer les commentaires
+  const addComment = (x: number, y: number, text: string, cameraId?: string, fontSize: number = 14) => {
     const newComment: Comment = {
       id: uuidv4(),
       text,
@@ -251,6 +301,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       y,
       page,
       color: getRandomColor(),
+      fontSize,
       cameraId,
       createdAt: new Date(),
       updatedAt: new Date()
@@ -322,8 +373,70 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return colors[Math.floor(Math.random() * colors.length)];
   };
 
-  // Fonction pour capturer l'état exact du canvas avec les caméras
-  const captureCanvas = async (): Promise<HTMLCanvasElement | null> => {
+  // Nouvelles fonctions pour gérer les logos
+  const addLogo = (logoId: string, x: number, y: number) => {
+    const logoTemplate = availableLogos.find(l => l.id === logoId);
+    
+    if (!logoTemplate) {
+      console.error(`Logo avec ID ${logoId} non trouvé`);
+      return;
+    }
+    
+    const newLogo: Logo = {
+      ...logoTemplate,
+      id: uuidv4(),
+      x,
+      y,
+      page
+    };
+    
+    // Ajouter le logo à la page courante
+    const currentPageLogos = [...(pageLogos[page] || []), newLogo];
+    setPageLogos({
+      ...pageLogos,
+      [page]: currentPageLogos
+    });
+    
+    setSelectedLogo(newLogo.id);
+    
+    console.log(`Logo ajouté à la page ${page}:`, newLogo);
+  };
+
+  const updateLogo = (id: string, updates: Partial<Logo>) => {
+    // Mettre à jour le logo uniquement sur la page courante
+    const updatedPageLogos = (pageLogos[page] || []).map(logo => {
+      if (logo.id === id) {
+        const updatedLogo = { ...logo, ...updates };
+        console.log(`Logo mis à jour sur la page ${page}:`, updatedLogo);
+        return updatedLogo;
+      }
+      return logo;
+    });
+    
+    setPageLogos({
+      ...pageLogos,
+      [page]: updatedPageLogos
+    });
+  };
+
+  const deleteLogo = (id: string) => {
+    // Supprimer le logo uniquement de la page courante
+    const filteredLogos = (pageLogos[page] || []).filter(logo => logo.id !== id);
+    
+    setPageLogos({
+      ...pageLogos,
+      [page]: filteredLogos
+    });
+    
+    if (selectedLogo === id) {
+      setSelectedLogo(null);
+    }
+    
+    console.log(`Logo supprimé de la page ${page}, ID: ${id}`);
+  };
+
+  // Fonction pour capturer l'état exact du canvas avec les caméras, commentaires et logos
+  const captureCanvas = async (forExport: boolean = true): Promise<HTMLCanvasElement | null> => {
     return new Promise((resolve) => {
       // Trouver le canvas du PDF et le canvas Konva
       const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
@@ -428,8 +541,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     console.log(`Export du PDF pour la page ${page}`);
     
     try {
+      // Forcer l'affichage de tous les commentaires pour l'export
+      const currentSelectedComment = selectedComment;
+      setSelectedComment(null); // Désélectionner pour éviter les conflits
+      
+      // Attendre que le rendu soit mis à jour
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Capturer le canvas combiné
-      const combinedCanvas = await captureCanvas();
+      const combinedCanvas = await captureCanvas(true);
       
       if (!combinedCanvas) {
         console.error('Échec de la capture du canvas');
@@ -469,12 +589,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       pdf.save(`plancam_page${page}_${new Date().toISOString().slice(0, 10)}.pdf`);
       
       console.log('PDF exporté avec succès');
+      
+      // Restaurer l'état de sélection précédent
+      setSelectedComment(currentSelectedComment);
     } catch (error) {
       console.error('Erreur lors de l\'export du PDF:', error);
     }
   };
 
-  // Nouvelle fonction pour exporter toutes les pages en un seul PDF
+  // Fonction pour exporter toutes les pages en un seul PDF
   const exportPdf = async () => {
     console.log('Export de toutes les pages en un seul PDF');
     
@@ -484,17 +607,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     
     try {
-      // Sauvegarder la page courante
+      // Sauvegarder la page courante et l'état de sélection
       const currentPage = page;
+      const currentSelectedComment = selectedComment;
+      setSelectedComment(null); // Désélectionner pour l'export
       
-      // Récupérer les numéros de pages qui contiennent des caméras
-      const pageNumbers = Object.keys(pageCameras)
-        .map(Number)
+      // Récupérer les numéros de pages qui contiennent des caméras ou des commentaires
+      const pageNumbers = Array.from(
+        new Set([
+          ...Object.keys(pageCameras).map(Number),
+          ...Object.keys(pageComments).map(Number),
+          ...Object.keys(pageLogos).map(Number)
+        ])
+      )
         .filter(pageNum => pageNum <= totalPages)
         .sort((a, b) => a - b);
       
       if (pageNumbers.length === 0) {
-        alert('Aucune page avec des caméras à exporter');
+        alert('Aucune page avec des éléments à exporter');
         return;
       }
       
@@ -502,7 +632,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const mergedPdf = new jsPDF();
       let isFirstPage = true;
       
-      // Pour chaque page qui contient des caméras
+      // Pour chaque page qui contient des éléments
       for (const pageNum of pageNumbers) {
         console.log(`Traitement de la page ${pageNum} pour l'export complet`);
         
@@ -510,11 +640,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setPage(pageNum);
         
         // Attendre que le rendu de la page soit terminé
-        // Cette attente est cruciale pour que le PDF soit correctement rendu
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Capturer le canvas de cette page
-        const combinedCanvas = await captureCanvas();
+        const combinedCanvas = await captureCanvas(true);
         
         if (!combinedCanvas) {
           console.error(`Échec de la capture du canvas pour la page ${pageNum}`);
@@ -554,8 +683,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.log(`Page ${pageNum} ajoutée au PDF`);
       }
       
-      // Restaurer la page courante
+      // Restaurer la page courante et l'état de sélection
       setPage(currentPage);
+      setSelectedComment(currentSelectedComment);
       
       // Télécharger le PDF final
       mergedPdf.save(`plancam_complet_${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -601,7 +731,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       selectedIconType,
       setSelectedIconType,
       clearCurrentPage,
-      // Nouvelles valeurs pour les commentaires
+      // Valeurs pour les commentaires
       comments,
       addComment,
       updateComment,
@@ -609,7 +739,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       selectedComment,
       setSelectedComment,
       isAddingComment,
-      setIsAddingComment
+      setIsAddingComment,
+      // Valeurs pour les logos
+      logos,
+      addLogo,
+      updateLogo,
+      deleteLogo,
+      selectedLogo,
+      setSelectedLogo,
+      availableLogos
     }}>
       {children}
     </AppContext.Provider>

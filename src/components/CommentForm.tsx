@@ -7,7 +7,10 @@ import {
   TextField, 
   Button,
   FormControlLabel,
-  Checkbox
+  Checkbox,
+  Slider,
+  Typography,
+  Box
 } from '@mui/material';
 import { useAppContext } from '../context/AppContext';
 
@@ -28,18 +31,21 @@ const CommentForm: React.FC<CommentFormProps> = ({ open, onClose, position }) =>
   
   const [text, setText] = useState('');
   const [attachToCamera, setAttachToCamera] = useState(false);
+  const [fontSize, setFontSize] = useState(14); // Taille de police par défaut
   
-  // Si un commentaire est sélectionné, charger son texte
+  // Si un commentaire est sélectionné, charger son texte et sa taille de police
   useEffect(() => {
     if (selectedComment) {
       const comment = comments.find(c => c.id === selectedComment);
       if (comment) {
         setText(comment.text);
         setAttachToCamera(!!comment.cameraId);
+        setFontSize(comment.fontSize || 14);
       }
     } else {
       setText('');
       setAttachToCamera(!!selectedCamera);
+      setFontSize(14);
     }
   }, [selectedComment, comments, selectedCamera]);
 
@@ -50,6 +56,7 @@ const CommentForm: React.FC<CommentFormProps> = ({ open, onClose, position }) =>
       // Mise à jour d'un commentaire existant
       updateComment(selectedComment, {
         text,
+        fontSize,
         cameraId: attachToCamera ? selectedCamera : undefined
       });
     } else if (position) {
@@ -58,11 +65,16 @@ const CommentForm: React.FC<CommentFormProps> = ({ open, onClose, position }) =>
         position.x, 
         position.y, 
         text,
-        attachToCamera ? selectedCamera : undefined
+        attachToCamera ? selectedCamera : undefined,
+        fontSize
       );
     }
     
     onClose();
+  };
+
+  const handleFontSizeChange = (_event: Event, newValue: number | number[]) => {
+    setFontSize(newValue as number);
   };
 
   return (
@@ -83,6 +95,22 @@ const CommentForm: React.FC<CommentFormProps> = ({ open, onClose, position }) =>
           onChange={(e) => setText(e.target.value)}
           variant="outlined"
         />
+        
+        <Box sx={{ mt: 3, mb: 2 }}>
+          <Typography gutterBottom>
+            Taille de police: {fontSize}px
+          </Typography>
+          <Slider
+            value={fontSize}
+            onChange={handleFontSizeChange}
+            aria-labelledby="font-size-slider"
+            step={1}
+            marks
+            min={10}
+            max={24}
+            valueLabelDisplay="auto"
+          />
+        </Box>
         
         {selectedCamera && (
           <FormControlLabel
