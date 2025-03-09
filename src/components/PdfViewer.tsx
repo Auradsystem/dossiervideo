@@ -3,9 +3,8 @@ import { Stage, Layer, Image as KonvaImage } from 'react-konva';
 import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
 import CommentObject from './CommentObject';
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
+// Importation dynamique pour éviter les problèmes de build
+import * as pdfjs from 'pdfjs-dist';
 import CommentForm from './CommentForm';
 import { Box, IconButton, Tooltip } from '@mui/material';
 import AddCommentIcon from '@mui/icons-material/AddComment';
@@ -13,7 +12,11 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import LogoObject from './LogoObject';
 import LogoSelector from './LogoSelector';
 
+// Configuration du worker PDF.js
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+// Importation dynamique des composants react-pdf
+const PDFComponents = React.lazy(() => import('./PDFComponents'));
 
 const PdfViewer: React.FC = () => {
   const {
@@ -164,23 +167,18 @@ const PdfViewer: React.FC = () => {
     <Box ref={containerRef} sx={{ width: '100%', height: '100%', overflow: 'auto', position: 'relative' }}>
       {pdfFile ? (
         <>
-          <Document
-            file={pdfFile}
-            onLoadSuccess={(pdf) => setTotalPages(pdf.numPages)}
-            options={{
-              cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/cmaps/',
-              cMapPacked: true,
-            }}
-          >
-            <Page
+          <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+            <p>Chargement du PDF...</p>
+          </Box>}>
+            <PDFComponents
+              file={pdfFile}
               pageNumber={page}
-              onLoadSuccess={handlePageLoadSuccess}
+              onLoadSuccess={(pdf: any) => setTotalPages(pdf.numPages)}
+              onPageLoadSuccess={handlePageLoadSuccess}
               width={pdfDimensions.width * scale}
               height={pdfDimensions.height * scale}
-              renderTextLayer={false}
-              renderAnnotationLayer={false}
             />
-          </Document>
+          </React.Suspense>
           
           {image && (
             <Stage
