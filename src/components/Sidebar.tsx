@@ -1,38 +1,40 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Box, 
   Drawer, 
-  Divider, 
-  Typography, 
-  Button, 
-  TextField, 
-  IconButton,
+  List, 
+  ListItem, 
+  ListItemButton, 
+  ListItemIcon, 
+  ListItemText,
+  Divider,
+  Typography,
   Slider,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  FormHelperText,
+  TextField,
+  Button,
+  IconButton,
+  Grid,
   Paper,
-  Stack
+  Tooltip
 } from '@mui/material';
-import { Upload, Download, Eye, Save, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Camera, CameraOff, Maximize, Minimize, RotateCcw, Eye, Trash2, Settings } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { CameraType, cameraIcons } from '../types/Camera';
 
-const drawerWidth = 300;
+const drawerWidth = 280;
 
 const Sidebar: React.FC = () => {
   const { 
-    pdfFile, 
-    setPdfFile, 
+    cameras, 
     selectedCamera, 
-    updateCamera, 
+    setSelectedCamera, 
+    addCamera,
+    updateCamera,
     deleteCamera,
-    cameras,
-    exportPdf,
-    exportCurrentPage,
-    previewPdf,
     namingPattern,
     setNamingPattern,
     nextCameraNumber,
@@ -40,52 +42,109 @@ const Sidebar: React.FC = () => {
     selectedIconType,
     setSelectedIconType
   } = useAppContext();
-  
-  const [fileInputKey, setFileInputKey] = useState(Date.now());
-  
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      const file = event.target.files[0];
-      if (file.type === 'application/pdf') {
-        setPdfFile(file);
-        console.log(`Fichier PDF chargé: ${file.name}`);
-      } else {
-        alert('Veuillez sélectionner un fichier PDF');
-      }
-      // Reset the file input
-      setFileInputKey(Date.now());
-    }
-  };
 
-  const selectedCameraData = selectedCamera 
-    ? cameras.find(camera => camera.id === selectedCamera) 
-    : null;
+  const selectedCameraData = cameras.find(cam => cam.id === selectedCamera);
 
-  const handleCameraChange = (field: string, value: any) => {
+  const handleCameraTypeChange = (event: any) => {
     if (selectedCamera) {
-      updateCamera(selectedCamera, { [field]: value });
+      updateCamera(selectedCamera, { type: event.target.value as CameraType });
     }
   };
 
-  const handleDeleteCamera = () => {
-    if (selectedCamera && window.confirm('Êtes-vous sûr de vouloir supprimer cette caméra ?')) {
-      deleteCamera(selectedCamera);
+  const handleAngleChange = (event: Event, newValue: number | number[]) => {
+    if (selectedCamera) {
+      updateCamera(selectedCamera, { angle: newValue as number });
     }
   };
 
-  const handleNamingPatternChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setNamingPattern(e.target.value);
+  const handleDistanceChange = (event: Event, newValue: number | number[]) => {
+    if (selectedCamera) {
+      updateCamera(selectedCamera, { viewDistance: newValue as number });
+    }
   };
 
-  const handleNextNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value, 10);
+  const handleOpacityChange = (event: Event, newValue: number | number[]) => {
+    if (selectedCamera) {
+      updateCamera(selectedCamera, { opacity: (newValue as number) / 100 });
+    }
+  };
+
+  const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (selectedCamera) {
+      updateCamera(selectedCamera, { name: event.target.value });
+    }
+  };
+
+  const handlePatternChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setNamingPattern(event.target.value);
+  };
+
+  const handleNextNumberChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(event.target.value, 10);
     if (!isNaN(value) && value > 0) {
       setNextCameraNumber(value);
     }
   };
 
-  const handleIconTypeChange = (event: React.ChangeEvent<{ value: unknown }>) => {
-    setSelectedIconType(event.target.value as string);
+  const handleDeleteCamera = () => {
+    if (selectedCamera) {
+      deleteCamera(selectedCamera);
+    }
+  };
+
+  const handleIconSelect = (iconType: string) => {
+    setSelectedIconType(iconType);
+    if (selectedCamera) {
+      updateCamera(selectedCamera, { 
+        type: iconType as CameraType,
+        iconPath: cameraIcons[iconType]?.path
+      });
+    }
+  };
+
+  // Composant pour afficher une icône de caméra dans la banque d'icônes
+  const CameraIconPreview = ({ type, name }: { type: string, name: string }) => {
+    const iconData = cameraIcons[type as keyof typeof cameraIcons];
+    const isSelected = selectedIconType === type;
+    
+    return (
+      <Tooltip title={name}>
+        <Paper 
+          elevation={isSelected ? 8 : 1}
+          sx={{ 
+            p: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center',
+            cursor: 'pointer',
+            border: isSelected ? `2px solid ${iconData.color}` : '2px solid transparent',
+            bgcolor: isSelected ? 'rgba(0,0,0,0.05)' : 'white'
+          }}
+          onClick={() => handleIconSelect(type)}
+        >
+          <Box 
+            sx={{ 
+              width: 32, 
+              height: 32, 
+              borderRadius: '50%', 
+              bgcolor: iconData.color,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              color: 'white',
+              mb: 0.5
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path d={iconData.path} fill="white" />
+            </svg>
+          </Box>
+          <Typography variant="caption" noWrap sx={{ fontSize: '0.65rem' }}>
+            {name}
+          </Typography>
+        </Paper>
+      </Tooltip>
+    );
   };
 
   return (
@@ -97,234 +156,226 @@ const Sidebar: React.FC = () => {
         '& .MuiDrawer-paper': {
           width: drawerWidth,
           boxSizing: 'border-box',
-          bgcolor: 'background.paper',
-          borderRight: '1px solid rgba(0, 0, 0, 0.12)',
         },
       }}
     >
       <Box sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom>
-          PlanCam
+          Outils
         </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Gestion de caméras sur plan
-        </Typography>
+        <List>
+          <ListItem disablePadding>
+            <ListItemButton onClick={() => addCamera(100, 100, selectedIconType as CameraType)}>
+              <ListItemIcon>
+                <Camera size={20} />
+              </ListItemIcon>
+              <ListItemText primary="Ajouter une caméra" />
+            </ListItemButton>
+          </ListItem>
+        </List>
         
-        <Button
-          variant="contained"
-          component="label"
-          fullWidth
-          startIcon={<Upload size={16} />}
-          sx={{ mt: 2 }}
-        >
-          Charger PDF
-          <input
-            key={fileInputKey}
-            type="file"
-            hidden
-            accept="application/pdf"
-            onChange={handleFileChange}
-          />
-        </Button>
-        
-        {pdfFile && (
-          <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic' }}>
-            Fichier: {pdfFile.name}
+        <Box sx={{ mt: 2, p: 1, bgcolor: 'background.paper', borderRadius: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Séquence de nommage
           </Typography>
-        )}
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <TextField
+              size="small"
+              label="Préfixe"
+              value={namingPattern}
+              onChange={handlePatternChange}
+              sx={{ flexGrow: 1 }}
+            />
+            <TextField
+              size="small"
+              label="Prochain #"
+              type="number"
+              value={nextCameraNumber}
+              onChange={handleNextNumberChange}
+              sx={{ width: '80px' }}
+              inputProps={{ min: 1 }}
+            />
+          </Box>
+        </Box>
         
-        <Divider sx={{ my: 2 }} />
-        
-        <Typography variant="subtitle1" gutterBottom>
-          Paramètres des caméras
-        </Typography>
-        
-        <Box sx={{ mb: 2 }}>
-          <TextField
-            label="Préfixe de nommage"
-            value={namingPattern}
-            onChange={handleNamingPatternChange}
-            size="small"
-            fullWidth
-            margin="dense"
-          />
-          <TextField
-            label="Prochain numéro"
-            type="number"
-            value={nextCameraNumber}
-            onChange={handleNextNumberChange}
-            size="small"
-            fullWidth
-            margin="dense"
-            inputProps={{ min: 1 }}
-          />
-          <FormControl fullWidth margin="dense" size="small">
-            <InputLabel>Type de caméra</InputLabel>
-            <Select
-              value={selectedIconType}
-              onChange={handleIconTypeChange}
-              label="Type de caméra"
-            >
-              <MenuItem value="dome">Dôme</MenuItem>
-              <MenuItem value="bullet">Bullet</MenuItem>
-              <MenuItem value="ptz">PTZ</MenuItem>
-              <MenuItem value="fisheye">Fisheye</MenuItem>
-            </Select>
-            <FormHelperText>Type par défaut pour les nouvelles caméras</FormHelperText>
-          </FormControl>
+        {/* Banque d'icônes */}
+        <Box sx={{ mt: 2, p: 1, bgcolor: 'background.paper', borderRadius: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Banque d'icônes
+          </Typography>
+          <Grid container spacing={1}>
+            <Grid item xs={4}>
+              <CameraIconPreview type="hikvision" name="Hikvision" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="dahua" name="Dahua" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="axis" name="Axis" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="dome" name="Dôme" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="bullet" name="Bullet" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="ptz" name="PTZ" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="fisheye" name="Fisheye" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="turret" name="Turret" />
+            </Grid>
+            <Grid item xs={4}>
+              <CameraIconPreview type="thermal" name="Thermique" />
+            </Grid>
+          </Grid>
         </Box>
       </Box>
       
       <Divider />
       
-      {selectedCameraData ? (
-        <Box sx={{ p: 2, overflow: 'auto' }}>
-          <Typography variant="subtitle1" gutterBottom>
-            Édition de la caméra
-          </Typography>
+      <Box sx={{ p: 2 }}>
+        <Typography variant="h6" gutterBottom>
+          Caméras
+        </Typography>
+        <List>
+          {cameras.map((camera) => (
+            <ListItem 
+              key={camera.id} 
+              disablePadding
+              secondaryAction={
+                selectedCamera === camera.id && (
+                  <IconButton 
+                    edge="end" 
+                    size="small" 
+                    onClick={handleDeleteCamera}
+                    sx={{ color: 'error.main' }}
+                  >
+                    <Trash2 size={16} />
+                  </IconButton>
+                )
+              }
+            >
+              <ListItemButton 
+                selected={selectedCamera === camera.id}
+                onClick={() => setSelectedCamera(camera.id)}
+              >
+                <ListItemIcon>
+                  <Box 
+                    sx={{ 
+                      width: 24, 
+                      height: 24, 
+                      borderRadius: '50%', 
+                      bgcolor: cameraIcons[camera.type]?.color || '#1976d2',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                      <path d={cameraIcons[camera.type]?.path || cameraIcons.dome.path} fill="white" />
+                    </svg>
+                  </Box>
+                </ListItemIcon>
+                <ListItemText primary={camera.name} />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
+      </Box>
+      
+      <Divider />
+      
+      {selectedCameraData && (
+        <Box sx={{ p: 2, overflowY: 'auto' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>
+              Propriétés
+            </Typography>
+            <IconButton size="small">
+              <Settings size={18} />
+            </IconButton>
+          </Box>
           
           <TextField
-            label="Nom"
-            value={selectedCameraData.name}
-            onChange={(e) => handleCameraChange('name', e.target.value)}
             fullWidth
-            margin="dense"
+            label="Nom"
+            variant="outlined"
             size="small"
+            margin="normal"
+            value={selectedCameraData.name}
+            onChange={handleNameChange}
           />
           
-          <FormControl fullWidth margin="dense" size="small">
-            <InputLabel>Type</InputLabel>
+          <FormControl fullWidth margin="normal" size="small">
+            <InputLabel>Type de caméra</InputLabel>
             <Select
               value={selectedCameraData.type}
-              onChange={(e) => handleCameraChange('type', e.target.value)}
-              label="Type"
+              label="Type de caméra"
+              onChange={handleCameraTypeChange}
             >
+              <MenuItem value="hikvision">Hikvision</MenuItem>
+              <MenuItem value="dahua">Dahua</MenuItem>
+              <MenuItem value="axis">Axis</MenuItem>
               <MenuItem value="dome">Dôme</MenuItem>
               <MenuItem value="bullet">Bullet</MenuItem>
               <MenuItem value="ptz">PTZ</MenuItem>
               <MenuItem value="fisheye">Fisheye</MenuItem>
+              <MenuItem value="turret">Turret</MenuItem>
+              <MenuItem value="thermal">Thermique</MenuItem>
+              <MenuItem value="multisensor">Multi-capteurs</MenuItem>
             </Select>
           </FormControl>
           
-          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+          <Typography gutterBottom sx={{ mt: 2 }}>
             Angle de vue: {selectedCameraData.angle}°
           </Typography>
-          <Slider
-            value={selectedCameraData.angle}
-            onChange={(_, value) => handleCameraChange('angle', value)}
-            min={10}
-            max={360}
-            step={5}
-            valueLabelDisplay="auto"
-            sx={{ mt: 1 }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <RotateCcw size={16} />
+            <Slider
+              value={selectedCameraData.angle}
+              onChange={handleAngleChange}
+              min={10}
+              max={360}
+              sx={{ mx: 1 }}
+            />
+            <RotateCcw size={16} />
+          </Box>
           
-          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+          <Typography gutterBottom sx={{ mt: 2 }}>
             Distance de vue: {selectedCameraData.viewDistance}
           </Typography>
-          <Slider
-            value={selectedCameraData.viewDistance}
-            onChange={(_, value) => handleCameraChange('viewDistance', value)}
-            min={20}
-            max={500}
-            step={10}
-            valueLabelDisplay="auto"
-            sx={{ mt: 1 }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Minimize size={16} />
+            <Slider
+              value={selectedCameraData.viewDistance}
+              onChange={handleDistanceChange}
+              min={10}
+              max={500}
+              sx={{ mx: 1 }}
+            />
+            <Maximize size={16} />
+          </Box>
           
-          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-            Rotation: {selectedCameraData.rotation || 0}°
+          <Typography gutterBottom sx={{ mt: 2 }}>
+            Opacité: {Math.round(selectedCameraData.opacity * 100)}%
           </Typography>
-          <Slider
-            value={selectedCameraData.rotation || 0}
-            onChange={(_, value) => handleCameraChange('rotation', value)}
-            min={-180}
-            max={180}
-            step={5}
-            valueLabelDisplay="auto"
-            sx={{ mt: 1 }}
-          />
-          
-          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-            Opacité: {selectedCameraData.opacity}
-          </Typography>
-          <Slider
-            value={selectedCameraData.opacity}
-            onChange={(_, value) => handleCameraChange('opacity', value)}
-            min={0.1}
-            max={1}
-            step={0.1}
-            valueLabelDisplay="auto"
-            sx={{ mt: 1 }}
-          />
-          
-          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-            Taille: {Math.round(selectedCameraData.width)}
-          </Typography>
-          <Slider
-            value={selectedCameraData.width}
-            onChange={(_, value) => {
-              handleCameraChange('width', value);
-              handleCameraChange('height', value);
-            }}
-            min={10}
-            max={100}
-            step={5}
-            valueLabelDisplay="auto"
-            sx={{ mt: 1 }}
-          />
-          
-          <Button
-            variant="outlined"
-            color="error"
-            startIcon={<Trash2 size={16} />}
-            onClick={handleDeleteCamera}
-            fullWidth
-            sx={{ mt: 3 }}
-          >
-            Supprimer la caméra
-          </Button>
-        </Box>
-      ) : (
-        <Box sx={{ p: 2, color: 'text.secondary', textAlign: 'center' }}>
-          <Typography variant="body2">
-            Sélectionnez une caméra pour l'éditer
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <CameraOff size={16} />
+            <Slider
+              value={selectedCameraData.opacity * 100}
+              onChange={handleOpacityChange}
+              min={10}
+              max={100}
+              sx={{ mx: 1 }}
+            />
+            <Eye size={16} />
+          </Box>
         </Box>
       )}
-      
-      <Box sx={{ mt: 'auto', p: 2 }}>
-        <Divider sx={{ mb: 2 }} />
-        <Stack spacing={1}>
-          <Button
-            variant="outlined"
-            startIcon={<Eye size={16} />}
-            onClick={previewPdf}
-            fullWidth
-            disabled={!pdfFile}
-          >
-            Prévisualiser
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<Save size={16} />}
-            onClick={exportCurrentPage}
-            fullWidth
-            disabled={!pdfFile}
-          >
-            Exporter page
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<Download size={16} />}
-            onClick={exportPdf}
-            fullWidth
-            disabled={!pdfFile}
-          >
-            Exporter tout
-          </Button>
-        </Stack>
-      </Box>
     </Drawer>
   );
 };

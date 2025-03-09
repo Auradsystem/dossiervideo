@@ -1,5 +1,5 @@
 import React from 'react';
-import { Group, Circle, Wedge, Text, Transformer, Path } from 'react-konva';
+import { Group, Circle, Wedge, Text, Rect, Transformer, Path } from 'react-konva';
 import { Camera, cameraIcons } from '../types/Camera';
 import { useAppContext } from '../context/AppContext';
 
@@ -17,7 +17,6 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
   const isSelected = selectedCamera === camera.id;
   const transformerRef = React.useRef<any>(null);
   const groupRef = React.useRef<any>(null);
-  const wedgeRef = React.useRef<any>(null);
   
   React.useEffect(() => {
     if (isSelected && transformerRef.current && groupRef.current) {
@@ -68,7 +67,6 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
   };
 
   const handleDragEnd = (e: any) => {
-    console.log(`Caméra déplacée: ${camera.id} à la position (${e.target.x()}, ${e.target.y()})`);
     updateCamera(camera.id, {
       x: e.target.x(),
       y: e.target.y()
@@ -84,23 +82,11 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
     node.scaleX(1);
     node.scaleY(1);
     
-    console.log(`Caméra redimensionnée: ${camera.id}, nouvelle taille: ${Math.max(5, camera.width * scaleX)} x ${Math.max(5, camera.height * scaleY)}`);
     updateCamera(camera.id, {
       x: node.x(),
       y: node.y(),
       width: Math.max(5, camera.width * scaleX),
       height: Math.max(5, camera.height * scaleY)
-    });
-  };
-
-  // Fonction pour gérer la rotation du champ de vision
-  const handleRotate = (e: any) => {
-    if (!wedgeRef.current) return;
-    
-    const rotation = wedgeRef.current.rotation();
-    console.log(`Caméra tournée: ${camera.id}, nouvelle rotation: ${rotation}°`);
-    updateCamera(camera.id, {
-      rotation: rotation
     });
   };
 
@@ -111,26 +97,20 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
         x={camera.x}
         y={camera.y}
         draggable
-        onClick={() => {
-          console.log(`Caméra sélectionnée: ${camera.id}`);
-          setSelectedCamera(camera.id);
-        }}
+        onClick={() => setSelectedCamera(camera.id)}
         onTap={() => setSelectedCamera(camera.id)}
         onDragEnd={handleDragEnd}
         onTransformEnd={handleTransformEnd}
       >
-        {/* Camera view angle - avec rotation correcte */}
+        {/* Camera view angle - maintenant en rouge */}
         <Wedge
-          ref={wedgeRef}
           radius={camera.viewDistance}
           angle={camera.angle}
           fill="rgba(255, 0, 0, 0.3)"
           stroke="rgba(255, 0, 0, 0.6)"
           strokeWidth={1}
-          rotation={camera.rotation || -camera.angle / 2}
+          rotation={-camera.angle / 2}
           opacity={camera.opacity}
-          draggable={isSelected}
-          onDragEnd={handleRotate}
         />
         
         {/* Camera icon */}

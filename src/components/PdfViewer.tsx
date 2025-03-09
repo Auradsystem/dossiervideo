@@ -1,353 +1,272 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage } from 'react-konva';
+import React, { useEffect, useState, useRef } from 'react';
+import { Box, Paper, Typography, IconButton, Slider } from '@mui/material';
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+import { Stage, Layer } from 'react-konva';
 import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
-import CommentObject from './CommentObject';
-import CommentForm from './CommentForm';
-import { Box, IconButton, Tooltip, CircularProgress } from '@mui/material';
-import AddCommentIcon from '@mui/icons-material/AddComment';
-import DeleteIcon from '@mui/icons-material/Delete';
-import LogoObject from './LogoObject';
-import LogoSelector from './LogoSelector';
 
-// Importation dynamique des composants react-pdf
-const PDFComponents = React.lazy(() => import('./PDFComponents'));
+// Set up PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const PdfViewer: React.FC = () => {
-  const {
-    pdfFile,
-    cameras,
-    scale,
+  const { 
+    pdfFile, 
+    cameras, 
+    addCamera, 
+    scale, 
     setScale,
     page,
     setPage,
     totalPages,
-    setTotalPages,
-    selectedCamera,
-    setSelectedCamera,
-    addCamera,
-    selectedIconType,
-    comments,
-    selectedComment,
-    setSelectedComment,
-    isAddingComment,
-    setIsAddingComment,
-    deleteComment,
-    logos,
-    selectedLogo,
-    setSelectedLogo,
-    addLogo
+    setTotalPages
   } = useAppContext();
-
-  const [pdfDimensions, setPdfDimensions] = useState({ width: 0, height: 0 });
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
-  const [commentFormOpen, setCommentFormOpen] = useState(false);
-  const [commentPosition, setCommentPosition] = useState<{ x: number, y: number } | null>(null);
-  const [logoSelectorOpen, setLogoSelectorOpen] = useState(false);
-  const [logoPosition, setLogoPosition] = useState<{ x: number, y: number } | null>(null);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const stageRef = useRef<any>(null);
+  
+  const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pdfPageRendered, setPdfPageRendered] = useState<HTMLCanvasElement | null>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Fonction pour gérer le redimensionnement de la fenêtre
+  // Load PDF document when file changes
   useEffect(() => {
-    const handleResize = () => {
-      if (containerRef.current && pdfDimensions.width > 0) {
-        const containerWidth = containerRef.current.clientWidth;
-        const newScale = containerWidth / pdfDimensions.width * 0.9;
-        setScale(Math.min(newScale, 1));
+    if (!pdfFile) return;
+
+    const loadPdf = async () => {
+      try {
+        const fileArrayBuffer = await pdfFile.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: fileArrayBuffer }).promise;
+        setPdfDocument(pdf);
+        setTotalPages(pdf.numPages);
+        setPage(1);
+      } catch (error) {
+        console.error('Error loading PDF:', error);
       }
     };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [pdfDimensions, setScale]);
+    loadPdf();
+  }, [pdfFile, setTotalPages, setPage]);
 
-  // Fonction pour gérer le chargement réussi d'une page PDF
-  const handlePageLoadSuccess = (page: any) => {
-    try {
-      // Réinitialiser l'erreur si le chargement réussit
-      setPdfError(null);
-      setIsLoading(false);
-      
-      // Extraire les dimensions de la page
-      const viewport = page.getViewport({ scale: 1 });
-      const width = viewport.width;
-      const height = viewport.height;
-      
-      setPdfDimensions({ width, height });
-      
-      // Ajuster l'échelle en fonction de la taille du conteneur
-      if (containerRef.current) {
-        const containerWidth = containerRef.current.clientWidth;
-        const newScale = containerWidth / width * 0.9;
-        setScale(Math.min(newScale, 1));
-      }
-      
-      // Capturer l'image du canvas PDF
-      setTimeout(() => {
-        const canvas = document.querySelector('.react-pdf__Page__canvas') as HTMLCanvasElement;
-        if (canvas) {
-          const img = new Image();
-          img.src = canvas.toDataURL();
-          img.onload = () => setImage(img);
-        }
-      }, 100);
-    } catch (error) {
-      console.error("Erreur lors du chargement de la page PDF:", error);
-      setPdfError("Erreur lors du chargement de la page PDF");
-      setIsLoading(false);
-    }
-  };
+  // Render PDF page when page or scale changes
+  useEffect(() => {
+    if (!pdfDocument) return;
 
-  // Fonction pour gérer les erreurs de chargement PDF
-  const handlePdfLoadError = (error: Error) => {
-    console.error("Erreur de chargement du PDF:", error);
-    setPdfError(`Erreur de chargement du PDF: ${error.message}`);
-    setIsLoading(false);
-  };
-
-  // Fonction pour gérer le clic sur le stage
-  const handleStageClick = (e: any) => {
-    const clickedOnEmpty = e.target === e.target.getStage();
-    
-    if (clickedOnEmpty) {
-      // Si on est en mode ajout de commentaire
-      if (isAddingComment) {
-        const pointerPosition = stageRef.current.getPointerPosition();
-        setCommentPosition({
-          x: pointerPosition.x / scale,
-          y: pointerPosition.y / scale
+    const renderPage = async () => {
+      try {
+        const pdfPage = await pdfDocument.getPage(page);
+        const viewport = pdfPage.getViewport({ scale });
+        
+        if (!canvasRef.current) return;
+        
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d');
+        
+        if (!context) return;
+        
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await pdfPage.render({
+          canvasContext: context,
+          viewport,
+        }).promise;
+        
+        setPdfPageRendered(canvas);
+        setStageSize({
+          width: viewport.width,
+          height: viewport.height
         });
-        setCommentFormOpen(true);
-        return;
-      }
-      
-      setSelectedCamera(null);
-      setSelectedComment(null);
-      setSelectedLogo(null);
-    }
-  };
-
-  // Fonction pour gérer le double-clic sur le stage
-  const handleStageDblClick = (e: any) => {
-    if (e.target === e.target.getStage()) {
-      const stage = stageRef.current;
-      const pointerPosition = stage.getPointerPosition();
-      
-      // Convertir les coordonnées en tenant compte de l'échelle
-      const x = pointerPosition.x / scale;
-      const y = pointerPosition.y / scale;
-      
-      addCamera(x, y, selectedIconType);
-    }
-  };
-
-  // Fonction pour gérer la touche Suppr
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' && selectedComment) {
-        deleteComment(selectedComment);
+      } catch (error) {
+        console.error('Error rendering PDF page:', error);
       }
     };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedComment, deleteComment]);
 
-  // Fonction pour ajouter un logo
-  const handleAddLogo = () => {
-    if (stageRef.current) {
-      const pointerPosition = stageRef.current.getPointerPosition();
-      setLogoPosition({
-        x: pointerPosition.x / scale,
-        y: pointerPosition.y / scale
-      });
-      setLogoSelectorOpen(true);
-    }
-  };
+    renderPage();
+  }, [pdfDocument, page, scale]);
 
-  // Fonction pour sélectionner un logo
-  const handleLogoSelect = (logoId: string) => {
-    if (logoPosition) {
-      addLogo(logoId, logoPosition.x, logoPosition.y);
-      setLogoSelectorOpen(false);
-      setLogoPosition(null);
-    }
-  };
-
-  // Définir l'état de chargement lorsqu'un nouveau fichier PDF est sélectionné
+  // Update container size on resize
   useEffect(() => {
-    if (pdfFile) {
-      setIsLoading(true);
-      setPdfError(null);
-      setImage(null);
+    const updateSize = () => {
+      if (containerRef.current) {
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        setStageSize(prev => ({
+          ...prev,
+          containerWidth: width,
+          containerHeight: height
+        }));
+      }
+    };
+
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  const handleZoomIn = () => {
+    setScale(prev => Math.min(prev + 0.1, 3));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prev => Math.max(prev - 0.1, 0.5));
+  };
+
+  const handlePrevPage = () => {
+    if (page > 1) {
+      setPage(page - 1);
     }
-  }, [pdfFile]);
+  };
+
+  const handleNextPage = () => {
+    if (page < totalPages) {
+      setPage(page + 1);
+    }
+  };
+
+  const handleStageClick = (e: any) => {
+    // Only add camera if clicking directly on the stage (not on a camera)
+    if (e.target === e.currentTarget) {
+      const stage = e.target.getStage();
+      const pointerPosition = stage.getPointerPosition();
+      if (pointerPosition) {
+        addCamera(pointerPosition.x, pointerPosition.y, 'dome');
+      }
+    }
+  };
 
   return (
-    <Box ref={containerRef} sx={{ width: '100%', height: '100%', overflow: 'auto', position: 'relative' }}>
-      {pdfFile ? (
-        <>
-          <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-            <CircularProgress />
-            <p style={{ marginLeft: '10px' }}>Chargement du PDF...</p>
-          </Box>}>
-            <PDFComponents
-              file={pdfFile}
-              pageNumber={page}
-              onLoadSuccess={(pdf: any) => setTotalPages(pdf.numPages)}
-              onPageLoadSuccess={handlePageLoadSuccess}
-              onLoadError={handlePdfLoadError}
-              width={pdfDimensions.width * scale}
-              height={pdfDimensions.height * scale}
+    <Box 
+      sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        height: '100%',
+        position: 'relative'
+      }}
+    >
+      {!pdfFile ? (
+        <Paper 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            flexGrow: 1,
+            bgcolor: 'background.default',
+            p: 4
+          }}
+        >
+          <Box sx={{ textAlign: 'center' }}>
+            <img 
+              src="https://images.unsplash.com/photo-1586281380349-632531db7ed4?ixlib=rb-1.2.1&auto=format&fit=crop&w=300&q=80" 
+              alt="Blueprint" 
+              style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px', borderRadius: '8px' }}
             />
-          </React.Suspense>
-          
-          {isLoading && (
-            <Box sx={{ 
-              position: 'absolute', 
-              top: '50%', 
-              left: '50%', 
-              transform: 'translate(-50%, -50%)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center'
-            }}>
-              <CircularProgress />
-              <p style={{ marginTop: '10px' }}>Chargement du PDF...</p>
-            </Box>
-          )}
-          
-          {pdfError && (
-            <Box sx={{ 
-              position: 'absolute', 
-              top: '50%', 
-              left: '50%', 
-              transform: 'translate(-50%, -50%)',
-              bgcolor: 'error.light',
-              color: 'error.contrastText',
-              p: 2,
-              borderRadius: 1
-            }}>
-              {pdfError}
-            </Box>
-          )}
-          
-          {image && (
-            <Stage
-              ref={stageRef}
-              width={pdfDimensions.width * scale}
-              height={pdfDimensions.height * scale}
-              onClick={handleStageClick}
-              onDblClick={handleStageDblClick}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                pointerEvents: 'auto'
+            <Typography variant="h5" gutterBottom>
+              Aucun plan chargé
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Utilisez le bouton "Charger PDF" pour importer un plan
+            </Typography>
+          </Box>
+        </Paper>
+      ) : (
+        <>
+          <Box 
+            ref={containerRef}
+            sx={{ 
+              flexGrow: 1, 
+              overflow: 'auto',
+              position: 'relative',
+              bgcolor: '#e0e0e0'
+            }}
+          >
+            <Box 
+              sx={{ 
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '100%',
+                p: 2
               }}
-              scaleX={scale}
-              scaleY={scale}
             >
-              <Layer>
-                <KonvaImage
-                  image={image}
-                  width={pdfDimensions.width}
-                  height={pdfDimensions.height}
-                  listening={false}
-                />
-                
-                {/* Afficher les logos */}
-                {logos.map(logo => (
-                  <LogoObject
-                    key={logo.id}
-                    logo={logo}
-                    isSelected={selectedLogo === logo.id}
-                  />
-                ))}
-                
-                {/* Afficher les caméras */}
-                {cameras.map(camera => (
-                  <CameraObject
-                    key={camera.id}
-                    camera={camera}
-                    isSelected={selectedCamera === camera.id}
-                  />
-                ))}
-                
-                {/* Afficher les commentaires */}
-                {comments.map(comment => (
-                  <CommentObject
-                    key={comment.id}
-                    comment={comment}
-                  />
-                ))}
-              </Layer>
-            </Stage>
-          )}
-          
-          {/* Contrôles flottants */}
-          <Box sx={{ position: 'absolute', bottom: 16, right: 16, display: 'flex', gap: 1 }}>
-            <Tooltip title="Ajouter un commentaire">
-              <IconButton
-                color={isAddingComment ? "primary" : "default"}
-                onClick={() => setIsAddingComment(!isAddingComment)}
-                sx={{ bgcolor: 'background.paper' }}
-              >
-                <AddCommentIcon />
-              </IconButton>
-            </Tooltip>
-            
-            <Tooltip title="Ajouter un logo">
-              <IconButton
-                onClick={handleAddLogo}
-                sx={{ bgcolor: 'background.paper' }}
-              >
-                <img 
-                  src="/logo-icon.svg" 
-                  alt="Logo" 
-                  style={{ width: 24, height: 24 }} 
-                />
-              </IconButton>
-            </Tooltip>
-            
-            {selectedComment && (
-              <Tooltip title="Supprimer le commentaire">
-                <IconButton
-                  color="error"
-                  onClick={() => deleteComment(selectedComment)}
-                  sx={{ bgcolor: 'background.paper' }}
-                >
-                  <DeleteIcon />
-                </IconButton>
-              </Tooltip>
-            )}
+              <Box sx={{ position: 'relative' }}>
+                <canvas ref={canvasRef} style={{ display: 'block' }} />
+                {pdfPageRendered && (
+                  <Stage 
+                    width={stageSize.width} 
+                    height={stageSize.height}
+                    style={{ 
+                      position: 'absolute', 
+                      top: 0, 
+                      left: 0,
+                      pointerEvents: 'auto'
+                    }}
+                    onClick={handleStageClick}
+                  >
+                    <Layer>
+                      {cameras.map(camera => (
+                        <CameraObject 
+                          key={camera.id} 
+                          camera={camera} 
+                        />
+                      ))}
+                    </Layer>
+                  </Stage>
+                )}
+              </Box>
+            </Box>
           </Box>
           
-          {/* Formulaire de commentaire */}
-          <CommentForm
-            open={commentFormOpen}
-            onClose={() => {
-              setCommentFormOpen(false);
-              setIsAddingComment(false);
+          <Paper 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              p: 1, 
+              borderTop: 1, 
+              borderColor: 'divider',
+              gap: 2
             }}
-            position={commentPosition}
-          />
-          
-          {/* Sélecteur de logo */}
-          <LogoSelector
-            open={logoSelectorOpen}
-            onClose={() => setLogoSelectorOpen(false)}
-            onSelect={handleLogoSelect}
-          />
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <IconButton onClick={handleZoomOut} size="small">
+                <ZoomOut size={20} />
+              </IconButton>
+              <Slider
+                value={scale}
+                min={0.5}
+                max={3}
+                step={0.1}
+                onChange={(_, value) => setScale(value as number)}
+                sx={{ width: 100, mx: 1 }}
+              />
+              <IconButton onClick={handleZoomIn} size="small">
+                <ZoomIn size={20} />
+              </IconButton>
+              <Typography variant="body2" sx={{ ml: 1 }}>
+                {Math.round(scale * 100)}%
+              </Typography>
+            </Box>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', ml: 'auto' }}>
+              <IconButton 
+                onClick={handlePrevPage} 
+                disabled={page <= 1}
+                size="small"
+              >
+                <ChevronLeft size={20} />
+              </IconButton>
+              <Typography variant="body2" sx={{ mx: 1 }}>
+                Page {page} / {totalPages}
+              </Typography>
+              <IconButton 
+                onClick={handleNextPage} 
+                disabled={page >= totalPages}
+                size="small"
+              >
+                <ChevronRight size={20} />
+              </IconButton>
+            </Box>
+          </Paper>
         </>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-          <p>Veuillez charger un fichier PDF</p>
-        </Box>
       )}
     </Box>
   );
