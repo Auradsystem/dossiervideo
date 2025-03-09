@@ -91,7 +91,7 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
     });
   };
 
-  // Nouvelle fonction pour gérer la rotation du champ de vision
+  // Fonction pour gérer la rotation du champ de vision
   const handleRotate = (e: any) => {
     if (!wedgeRef.current) return;
     

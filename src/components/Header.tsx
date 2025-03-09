@@ -8,7 +8,8 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  Divider
+  Divider,
+  Badge
 } from '@mui/material';
 import { 
   Upload, 
@@ -16,7 +17,8 @@ import {
   LogOut, 
   Eye,
   Settings,
-  ChevronDown
+  ChevronDown,
+  FileText
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import PdfPreview from './PdfPreview';
@@ -28,7 +30,10 @@ const Header: React.FC = () => {
     logout,
     previewPdf,
     isPreviewOpen,
-    setIsPreviewOpen
+    setIsPreviewOpen,
+    pdfFile,
+    page,
+    totalPages
   } = useAppContext();
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -72,6 +77,11 @@ const Header: React.FC = () => {
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             PlanCam
+            {pdfFile && (
+              <Typography variant="caption" sx={{ ml: 2, opacity: 0.8 }}>
+                {pdfFile.name} {totalPages > 1 ? `(Page ${page}/${totalPages})` : ''}
+              </Typography>
+            )}
           </Typography>
           
           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -96,6 +106,7 @@ const Header: React.FC = () => {
               startIcon={<Download size={18} />}
               onClick={handleMenuOpen}
               endIcon={<ChevronDown size={16} />}
+              disabled={!pdfFile}
             >
               Exporter
             </Button>
