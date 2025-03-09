@@ -14,9 +14,11 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  TextField
+  TextField,
+  Button,
+  IconButton
 } from '@mui/material';
-import { Camera, CameraOff, Maximize, Minimize, RotateCcw, Eye } from 'lucide-react';
+import { Camera, CameraOff, Maximize, Minimize, RotateCcw, Eye, Trash2, Settings } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { CameraType } from '../types/Camera';
 
@@ -29,7 +31,11 @@ const Sidebar: React.FC = () => {
     setSelectedCamera, 
     addCamera,
     updateCamera,
-    deleteCamera
+    deleteCamera,
+    namingPattern,
+    setNamingPattern,
+    nextCameraNumber,
+    setNextCameraNumber
   } = useAppContext();
 
   const selectedCameraData = cameras.find(cam => cam.id === selectedCamera);
@@ -64,6 +70,23 @@ const Sidebar: React.FC = () => {
     }
   };
 
+  const handlePatternChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setNamingPattern(event.target.value);
+  };
+
+  const handleNextNumberChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(event.target.value, 10);
+    if (!isNaN(value) && value > 0) {
+      setNextCameraNumber(value);
+    }
+  };
+
+  const handleDeleteCamera = () => {
+    if (selectedCamera) {
+      deleteCamera(selectedCamera);
+    }
+  };
+
   return (
     <Drawer
       variant="permanent"
@@ -90,6 +113,30 @@ const Sidebar: React.FC = () => {
             </ListItemButton>
           </ListItem>
         </List>
+        
+        <Box sx={{ mt: 2, p: 1, bgcolor: 'background.paper', borderRadius: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Séquence de nommage
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <TextField
+              size="small"
+              label="Préfixe"
+              value={namingPattern}
+              onChange={handlePatternChange}
+              sx={{ flexGrow: 1 }}
+            />
+            <TextField
+              size="small"
+              label="Prochain #"
+              type="number"
+              value={nextCameraNumber}
+              onChange={handleNextNumberChange}
+              sx={{ width: '80px' }}
+              inputProps={{ min: 1 }}
+            />
+          </Box>
+        </Box>
       </Box>
       
       <Divider />
@@ -100,7 +147,22 @@ const Sidebar: React.FC = () => {
         </Typography>
         <List>
           {cameras.map((camera) => (
-            <ListItem key={camera.id} disablePadding>
+            <ListItem 
+              key={camera.id} 
+              disablePadding
+              secondaryAction={
+                selectedCamera === camera.id && (
+                  <IconButton 
+                    edge="end" 
+                    size="small" 
+                    onClick={handleDeleteCamera}
+                    sx={{ color: 'error.main' }}
+                  >
+                    <Trash2 size={16} />
+                  </IconButton>
+                )
+              }
+            >
               <ListItemButton 
                 selected={selectedCamera === camera.id}
                 onClick={() => setSelectedCamera(camera.id)}
@@ -118,10 +180,15 @@ const Sidebar: React.FC = () => {
       <Divider />
       
       {selectedCameraData && (
-        <Box sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Propriétés
-          </Typography>
+        <Box sx={{ p: 2, overflowY: 'auto' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>
+              Propriétés
+            </Typography>
+            <IconButton size="small">
+              <Settings size={18} />
+            </IconButton>
+          </Box>
           
           <TextField
             fullWidth

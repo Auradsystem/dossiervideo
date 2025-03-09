@@ -5,8 +5,9 @@ import { Box } from '@mui/material';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import PdfViewer from './components/PdfViewer';
+import LoginForm from './components/LoginForm';
 import { Camera } from './types/Camera';
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useAppContext } from './context/AppContext';
 
 const theme = createTheme({
   palette: {
@@ -25,33 +26,43 @@ const theme = createTheme({
   },
 });
 
-function App() {
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [cameras, setCameras] = useState<Camera[]>([]);
-  const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
+// Main application component that checks authentication
+const MainApp: React.FC = () => {
+  const { isAuthenticated } = useAppContext();
 
+  if (!isAuthenticated) {
+    return <LoginForm />;
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <Header />
+      <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+        <Sidebar />
+        <Box 
+          component="main" 
+          sx={{ 
+            flexGrow: 1, 
+            p: 2, 
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}
+        >
+          <PdfViewer />
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
+// Root component that provides context
+function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AppProvider>
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-          <Header />
-          <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
-            <Sidebar />
-            <Box 
-              component="main" 
-              sx={{ 
-                flexGrow: 1, 
-                p: 2, 
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden'
-              }}
-            >
-              <PdfViewer />
-            </Box>
-          </Box>
-        </Box>
+        <MainApp />
       </AppProvider>
     </ThemeProvider>
   );

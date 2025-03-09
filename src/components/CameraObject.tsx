@@ -1,5 +1,5 @@
 import React from 'react';
-import { Group, Circle, Wedge, Text, Rect, Transformer } from 'react-konva';
+import { Group, Circle, Wedge, Text, Rect, Transformer, Path } from 'react-konva';
 import { Camera } from '../types/Camera';
 import { useAppContext } from '../context/AppContext';
 
@@ -25,29 +25,58 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
     }
   }, [isSelected]);
 
+  // SVG paths for camera icons
+  const domeCameraPath = "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9c.83 0 1.5-.67 1.5-1.5S7.83 8 7 8s-1.5.67-1.5 1.5S6.17 10 7 10zm8 0c.83 0 1.5-.67 1.5-1.5S15.83 8 15 8s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zm-.5 7.5c3.04 0 5.5-2.46 5.5-5.5H9c0 3.04 2.46 5.5 5.5 5.5z";
+  const bulletCameraPath = "M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3zM12 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6z";
+  const ptzCameraPath = "M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3zM12 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6z M12 13.5a0.5 0.5 0 1 0 0-1 0.5 0.5 0 0 0 0 1z";
+
   const getCameraIcon = () => {
+    const scale = camera.width / 24; // Scale factor based on camera width
+    
     switch (camera.type) {
       case 'dome':
         return (
-          <Circle
-            radius={camera.width / 2}
-            fill="#1976d2"
-            stroke="#000"
-            strokeWidth={1}
-          />
+          <>
+            <Circle
+              radius={camera.width / 2}
+              fill="#1976d2"
+              stroke="#000"
+              strokeWidth={1}
+              opacity={0.8}
+            />
+            <Path
+              data={domeCameraPath}
+              fill="#ffffff"
+              scaleX={scale}
+              scaleY={scale}
+              offsetX={12}
+              offsetY={12}
+            />
+          </>
         );
       case 'bullet':
         return (
-          <Rect
-            width={camera.width}
-            height={camera.height * 0.7}
-            offsetX={camera.width / 2}
-            offsetY={camera.height * 0.35}
-            fill="#dc004e"
-            stroke="#000"
-            strokeWidth={1}
-            cornerRadius={2}
-          />
+          <>
+            <Rect
+              width={camera.width}
+              height={camera.height * 0.7}
+              offsetX={camera.width / 2}
+              offsetY={camera.height * 0.35}
+              fill="#dc004e"
+              stroke="#000"
+              strokeWidth={1}
+              cornerRadius={2}
+              opacity={0.8}
+            />
+            <Path
+              data={bulletCameraPath}
+              fill="#ffffff"
+              scaleX={scale}
+              scaleY={scale}
+              offsetX={12}
+              offsetY={12}
+            />
+          </>
         );
       case 'ptz':
         return (
@@ -57,23 +86,37 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
               fill="#4caf50"
               stroke="#000"
               strokeWidth={1}
+              opacity={0.8}
             />
-            <Circle
-              radius={camera.width / 4}
-              fill="#fff"
-              stroke="#000"
-              strokeWidth={1}
+            <Path
+              data={ptzCameraPath}
+              fill="#ffffff"
+              scaleX={scale}
+              scaleY={scale}
+              offsetX={12}
+              offsetY={12}
             />
           </>
         );
       default:
         return (
-          <Circle
-            radius={camera.width / 2}
-            fill="#1976d2"
-            stroke="#000"
-            strokeWidth={1}
-          />
+          <>
+            <Circle
+              radius={camera.width / 2}
+              fill="#1976d2"
+              stroke="#000"
+              strokeWidth={1}
+              opacity={0.8}
+            />
+            <Path
+              data={bulletCameraPath}
+              fill="#ffffff"
+              scaleX={scale}
+              scaleY={scale}
+              offsetX={12}
+              offsetY={12}
+            />
+          </>
         );
     }
   };
@@ -118,8 +161,8 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
         <Wedge
           radius={camera.viewDistance}
           angle={camera.angle}
-          fill="rgba(255, 255, 0, 0.2)"
-          stroke="rgba(255, 255, 0, 0.5)"
+          fill="rgba(255, 255, 0, 0.3)"
+          stroke="rgba(255, 255, 0, 0.6)"
           strokeWidth={1}
           rotation={-camera.angle / 2}
           opacity={camera.opacity}
