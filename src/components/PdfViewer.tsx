@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
 import CommentObject from './CommentObject';
 import CommentForm from './CommentForm';
-import { Box, IconButton, Tooltip } from '@mui/material';
+import { Box, IconButton, Tooltip, CircularProgress } from '@mui/material';
 import AddCommentIcon from '@mui/icons-material/AddComment';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LogoObject from './LogoObject';
@@ -46,6 +46,7 @@ const PdfViewer: React.FC = () => {
   const [logoSelectorOpen, setLogoSelectorOpen] = useState(false);
   const [logoPosition, setLogoPosition] = useState<{ x: number, y: number } | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,10 +70,12 @@ const PdfViewer: React.FC = () => {
     try {
       // Réinitialiser l'erreur si le chargement réussit
       setPdfError(null);
+      setIsLoading(false);
       
-      const viewport = page._transport._pageInfo.view;
-      const width = viewport[2];
-      const height = viewport[3];
+      // Extraire les dimensions de la page
+      const viewport = page.getViewport({ scale: 1 });
+      const width = viewport.width;
+      const height = viewport.height;
       
       setPdfDimensions({ width, height });
       
@@ -95,6 +98,7 @@ const PdfViewer: React.FC = () => {
     } catch (error) {
       console.error("Erreur lors du chargement de la page PDF:", error);
       setPdfError("Erreur lors du chargement de la page PDF");
+      setIsLoading(false);
     }
   };
 
@@ -102,6 +106,7 @@ const PdfViewer: React.FC = () => {
   const handlePdfLoadError = (error: Error) => {
     console.error("Erreur de chargement du PDF:", error);
     setPdfError(`Erreur de chargement du PDF: ${error.message}`);
+    setIsLoading(false);
   };
 
   // Fonction pour gérer le clic sur le stage
@@ -173,22 +178,48 @@ const PdfViewer: React.FC = () => {
     }
   };
 
+  // Définir l'état de chargement lorsqu'un nouveau fichier PDF est sélectionné
+  useEffect(() => {
+    if (pdfFile) {
+      setIsLoading(true);
+      setPdfError(null);
+      setImage(null);
+    }
+  }, [pdfFile]);
+
   return (
     <Box ref={containerRef} sx={{ width: '100%', height: '100%', overflow: 'auto', position: 'relative' }}>
       {pdfFile ? (
         <>
           <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-            <p>Chargement du PDF...</p>
+            <CircularProgress />
+            <p style={{ marginLeft: '10px' }}>Chargement du PDF...</p>
           </Box>}>
             <PDFComponents
               file={pdfFile}
               pageNumber={page}
               onLoadSuccess={(pdf: any) => setTotalPages(pdf.numPages)}
               onPageLoadSuccess={handlePageLoadSuccess}
+              onLoadError={handlePdfLoadError}
               width={pdfDimensions.width * scale}
               height={pdfDimensions.height * scale}
             />
           </React.Suspense>
+          
+          {isLoading && (
+            <Box sx={{ 
+              position: 'absolute', 
+              top: '50%', 
+              left: '50%', 
+              transform: 'translate(-50%, -50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
+            }}>
+              <CircularProgress />
+              <p style={{ marginTop: '10px' }}>Chargement du PDF...</p>
+            </Box>
+          )}
           
           {pdfError && (
             <Box sx={{ 

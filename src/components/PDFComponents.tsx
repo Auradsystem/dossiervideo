@@ -3,17 +3,21 @@ import { Document, Page } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 
-// Définir le worker pour PDF.js
+// Configuration du worker PDF.js
 import { pdfjs } from 'react-pdf';
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url,
+).toString();
 
 interface PDFComponentsProps {
   file: File;
   pageNumber: number;
   onLoadSuccess: (pdf: any) => void;
   onPageLoadSuccess: (page: any) => void;
-  width: number;
-  height: number;
+  onLoadError: (error: Error) => void;
+  width?: number;
+  height?: number;
 }
 
 const PDFComponents: React.FC<PDFComponentsProps> = ({
@@ -21,6 +25,7 @@ const PDFComponents: React.FC<PDFComponentsProps> = ({
   pageNumber,
   onLoadSuccess,
   onPageLoadSuccess,
+  onLoadError,
   width,
   height
 }) => {
@@ -28,8 +33,9 @@ const PDFComponents: React.FC<PDFComponentsProps> = ({
     <Document
       file={file}
       onLoadSuccess={onLoadSuccess}
+      onLoadError={onLoadError}
       options={{
-        cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/cmaps/',
+        cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.8.162/cmaps/',
         cMapPacked: true,
       }}
     >
