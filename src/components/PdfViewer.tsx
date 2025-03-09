@@ -243,6 +243,7 @@ const PdfViewer: React.FC = () => {
                       pointerEvents: 'auto'
                     }}
                     onClick={handleStageClick}
+                    className="konvajs-content"
                   >
                     <Layer>
                       {cameras.map(camera => (

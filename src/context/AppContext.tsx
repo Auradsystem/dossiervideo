@@ -203,6 +203,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     console.log(`Toutes les caméras de la page ${page} ont été supprimées`);
   };
 
+  // Fonction pour capturer l'état exact du canvas Konva
+  const captureKonvaStage = (): Promise<HTMLCanvasElement | null> => {
+    return new Promise((resolve) => {
+      // Trouver le stage Konva
+      const stage = document.querySelector('.konvajs-content canvas');
+      if (!stage) {
+        console.error('Stage Konva non trouvé');
+        resolve(null);
+        return;
+      }
+
+      // Créer un canvas temporaire pour combiner le PDF et le stage Konva
+      const tempCanvas = document.createElement('canvas');
+      const ctx = tempCanvas.getContext('2d');
+      if (!ctx) {
+        console.error('Impossible de créer un contexte 2D');
+        resolve(null);
+        return;
+      }
+
+      // Obtenir le canvas du PDF
+      const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
+      if (!pdfCanvas) {
+        console.error('Canvas PDF non trouvé');
+        resolve(null);
+        return;
+      }
+
+      // Définir les dimensions du canvas temporaire
+      tempCanvas.width = pdfCanvas.width;
+      tempCanvas.height = pdfCanvas.height;
+
+      // Dessiner d'abord le PDF
+      ctx.drawImage(pdfCanvas, 0, 0);
+
+      // Puis dessiner le stage Konva par-dessus
+      ctx.drawImage(stage, 0, 0);
+
+      resolve(tempCanvas);
+    });
+  };
+
   // Fonction pour générer le PDF d'une page spécifique
   const generatePagePdf = async (pageNumber: number): Promise<Blob | null> => {
     if (!pdfFile) return null;
@@ -210,95 +252,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       console.log(`Génération du PDF pour la page ${pageNumber}`);
       
-      // Get the PDF viewer canvas
-      const pdfCanvas = document.querySelector('canvas');
-      if (!pdfCanvas) {
-        console.error('Canvas non trouvé');
+      // Capturer l'état exact du canvas Konva
+      const combinedCanvas = await captureKonvaStage();
+      if (!combinedCanvas) {
+        console.error('Échec de la capture du canvas');
         return null;
       }
-      
-      // Create a temporary canvas to render the PDF with cameras
-      const tempCanvas = document.createElement('canvas');
-      const ctx = tempCanvas.getContext('2d');
-      if (!ctx) {
-        console.error('Contexte 2D non disponible');
-        return null;
-      }
-      
-      // Set canvas dimensions to match the PDF canvas exactly
-      tempCanvas.width = pdfCanvas.width;
-      tempCanvas.height = pdfCanvas.height;
-      
-      // Draw the PDF exactly as it appears in the viewer
-      ctx.drawImage(pdfCanvas, 0, 0);
-      
-      // Récupérer les caméras de la page spécifique
-      const pageCamerasList = pageCameras[pageNumber] || [];
-      console.log(`Dessin de ${pageCamerasList.length} caméras pour la page ${pageNumber}`);
-      
-      // Dessiner les caméras de cette page
-      pageCamerasList.forEach(camera => {
-        // Sauvegarde du contexte avant transformation
-        ctx.save();
-        
-        // Déplacement à la position de la caméra
-        ctx.translate(camera.x, camera.y);
-        
-        // Dessiner le champ de vision avec la bonne orientation
-        ctx.beginPath();
-        
-        // Récupérer la rotation exacte de la caméra
-        const cameraRotation = camera.rotation || 0;
-        const halfAngle = camera.angle / 2;
-        
-        // Calculer les angles de début et de fin en radians
-        // Correction importante: utiliser la rotation exacte de la caméra
-        const startAngle = ((270 - halfAngle + cameraRotation) % 360) * Math.PI / 180;
-        const endAngle = ((270 + halfAngle + cameraRotation) % 360) * Math.PI / 180;
-        
-        console.log(`Caméra ${camera.id}: rotation=${cameraRotation}, startAngle=${startAngle * 180 / Math.PI}°, endAngle=${endAngle * 180 / Math.PI}°`);
-        
-        // Dessiner l'arc de cercle représentant le champ de vision
-        ctx.moveTo(0, 0);
-        ctx.arc(0, 0, camera.viewDistance, startAngle, endAngle);
-        ctx.closePath();
-        
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
-        ctx.stroke();
-        
-        // Dessiner l'icône de la caméra
-        ctx.beginPath();
-        ctx.arc(0, 0, camera.width / 2, 0, Math.PI * 2);
-        
-        // Utiliser la couleur correspondant au type de caméra
-        const iconData = cameraIcons[camera.type] || cameraIcons.dome;
-        ctx.fillStyle = iconData.color;
-        
-        ctx.fill();
-        ctx.strokeStyle = '#000';
-        ctx.stroke();
-        
-        // Dessiner le nom de la caméra
-        ctx.fillStyle = '#000';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(camera.name, 0, -camera.height / 2 - 5);
-        
-        // Restauration du contexte après dessin
-        ctx.restore();
-      });
       
       // Déterminer l'orientation en fonction du ratio largeur/hauteur
-      const orientation = tempCanvas.width > tempCanvas.height ? 'landscape' : 'portrait';
+      const orientation = combinedCanvas.width > combinedCanvas.height ? 'landscape' : 'portrait';
       console.log(`Orientation détectée: ${orientation}`);
       
       // Créer le PDF avec les dimensions appropriées
       const pdf = new jsPDF({
         orientation: orientation,
         unit: 'px',
-        format: [tempCanvas.width, tempCanvas.height],
+        format: [combinedCanvas.width, combinedCanvas.height],
         hotfixes: ['px_scaling']
       });
       
@@ -307,7 +276,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
       // Obtenir les données d'image du canvas avec une haute qualité
-      const imageData = tempCanvas.toDataURL('image/jpeg', 1.0);
+      const imageData = combinedCanvas.toDataURL('image/jpeg', 1.0);
       
       // Ajouter l'image au PDF, en préservant les dimensions et l'orientation exactes
       pdf.addImage({
