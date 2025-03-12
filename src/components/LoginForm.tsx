@@ -16,7 +16,7 @@ const LoginForm: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, syncWithCloud } = useAppContext();
+  const { login, syncWithCloud, isSyncing } = useAppContext();
 
   // Synchroniser avec le cloud au chargement
   useEffect(() => {
@@ -73,6 +73,15 @@ const LoginForm: React.FC = () => {
           <Typography variant="subtitle1" color="text.secondary">
             Gestion de caméras sur plans
           </Typography>
+          
+          {isSyncing && (
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+              <CircularProgress size={16} sx={{ mr: 1 }} />
+              <Typography variant="caption" color="text.secondary">
+                Synchronisation en cours...
+              </Typography>
+            </Box>
+          )}
         </Box>
         
         {error && (
