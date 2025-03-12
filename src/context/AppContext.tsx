@@ -259,48 +259,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       setIsSyncing(true);
       
-      // Utiliser le client avec la clé de service si disponible
-      const serviceClient = getServiceSupabase();
+      // Utiliser l'API standard de Supabase pour l'inscription
+      const { user, error } = await supabaseAuth.signUp(email, password, { is_admin: isAdmin });
       
-      if (serviceClient) {
-        // Utiliser l'API admin pour créer un utilisateur avec email confirmé
-        const { data, error } = await serviceClient.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true,
-          user_metadata: { is_admin: isAdmin }
-        });
-        
-        if (error) {
-          console.error('Erreur lors de la création de l\'utilisateur avec l\'API admin:', error);
-          return false;
-        }
-        
-        if (data.user) {
-          console.log('Utilisateur créé avec succès via l\'API admin');
-          return true;
-        }
-        
-        return false;
-      } else {
-        // Fallback à l'API standard
-        console.warn('Clé de service non disponible, utilisation de l\'API standard pour l\'inscription');
-        
-        // Inscription via Supabase
-        const { user, error } = await supabaseAuth.signUp(email, password, { is_admin: isAdmin });
-        
-        if (error) {
-          console.error('Erreur d\'inscription:', error);
-          return false;
-        }
-        
-        if (user) {
-          console.log('Inscription réussie via l\'API standard');
-          return true;
-        }
-        
+      if (error) {
+        console.error('Erreur d\'inscription:', error);
         return false;
       }
+      
+      if (user) {
+        console.log('Inscription réussie via l\'API standard');
+        return true;
+      }
+      
+      return false;
     } catch (error) {
       console.error('Erreur lors de l\'inscription:', error);
       return false;

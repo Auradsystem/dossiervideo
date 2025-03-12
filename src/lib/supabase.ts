@@ -19,45 +19,24 @@ export const supabaseAuth = {
   // Inscription d'un nouvel utilisateur
   signUp: async (email: string, password: string, metadata: UserMetadata = {}) => {
     try {
-      // Vérifier si la clé de service est disponible pour utiliser l'API admin
-      const serviceClient = getServiceSupabase();
+      console.log('Tentative d\'inscription avec l\'API standard de Supabase');
       
-      if (serviceClient) {
-        // Utiliser l'API admin pour créer un utilisateur avec email confirmé
-        const { data, error } = await serviceClient.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true,
-          user_metadata: metadata
-        });
-        
-        if (error) throw error;
-        
-        return { 
-          user: data.user ? mapSupabaseUser(data.user) : null, 
-          session: null,
-          error: null 
-        };
-      } else {
-        // Fallback à l'API standard si la clé de service n'est pas disponible
-        console.warn('Clé de service non disponible, utilisation de l\'API standard pour l\'inscription');
-        
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: metadata
-          }
-        });
-        
-        if (error) throw error;
-        
-        return { 
-          user: data.user ? mapSupabaseUser(data.user) : null, 
-          session: data.session,
-          error: null 
-        };
-      }
+      // Utiliser l'API standard de Supabase pour l'inscription
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: metadata
+        }
+      });
+      
+      if (error) throw error;
+      
+      return { 
+        user: data.user ? mapSupabaseUser(data.user) : null, 
+        session: data.session,
+        error: null 
+      };
     } catch (error: any) {
       console.error('Erreur lors de l\'inscription:', error);
       return { user: null, session: null, error };

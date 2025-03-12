@@ -24,7 +24,8 @@ import {
   Tooltip,
   Divider,
   Tab,
-  Tabs
+  Tabs,
+  Switch
 } from '@mui/material';
 import { Delete as DeleteIcon, Edit as EditIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
@@ -73,6 +74,8 @@ const AdminPanel: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [serviceKeyMissing, setServiceKeyMissing] = useState(false);
+  const [useAdminApi, setUseAdminApi] = useState(true);
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   // Charger les utilisateurs
   const loadUsers = async () => {
@@ -117,6 +120,7 @@ const AdminPanel: React.FC = () => {
   const resetForm = () => {
     setEmail('');
     setPassword('');
+    setConfirmPassword('');
     setIsAdmin(false);
   };
 
@@ -140,34 +144,61 @@ const AdminPanel: React.FC = () => {
         return;
       }
       
-      // Utiliser le client avec la clé de service pour créer un utilisateur
-      const serviceClient = getServiceSupabase();
-      
-      if (!serviceClient) {
-        setServiceKeyMissing(true);
-        setError('Clé de service Supabase manquante. Impossible de créer un utilisateur.');
+      if (password !== confirmPassword) {
+        setError('Les mots de passe ne correspondent pas');
         setIsLoading(false);
         return;
       }
       
-      // Créer un nouvel utilisateur avec le client de service
-      const { data, error: createError } = await serviceClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true, // Confirmer automatiquement l'email
-        user_metadata: { is_admin: isAdmin }
-      });
+      if (password.length < 6) {
+        setError('Le mot de passe doit contenir au moins 6 caractères');
+        setIsLoading(false);
+        return;
+      }
       
-      if (createError) throw createError;
-      
-      if (data.user) {
-        setSuccess(`L'utilisateur ${email} a été créé avec succès`);
-        resetForm();
+      if (useAdminApi) {
+        // Utiliser le client avec la clé de service pour créer un utilisateur
+        const serviceClient = getServiceSupabase();
         
-        // Recharger la liste des utilisateurs
-        await loadUsers();
+        if (!serviceClient) {
+          setServiceKeyMissing(true);
+          setError('Clé de service Supabase manquante. Impossible de créer un utilisateur avec l\'API Admin.');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Créer un nouvel utilisateur avec le client de service
+        const { data, error: createError } = await serviceClient.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true, // Confirmer automatiquement l'email
+          user_metadata: { is_admin: isAdmin }
+        });
+        
+        if (createError) throw createError;
+        
+        if (data.user) {
+          setSuccess(`L'utilisateur ${email} a été créé avec succès`);
+          resetForm();
+          
+          // Recharger la liste des utilisateurs
+          await loadUsers();
+        } else {
+          setError('Erreur lors de la création de l\'utilisateur: Aucune donnée retournée');
+        }
       } else {
-        setError('Erreur lors de la création de l\'utilisateur: Aucune donnée retournée');
+        // Utiliser l'API standard de Supabase
+        const success = await register(email, password, isAdmin);
+        
+        if (success) {
+          setSuccess(`L'utilisateur ${email} a été créé avec succès. Un email de confirmation a été envoyé.`);
+          resetForm();
+          
+          // Recharger la liste des utilisateurs
+          await loadUsers();
+        } else {
+          setError('Erreur lors de la création de l\'utilisateur');
+        }
       }
     } catch (error: any) {
       console.error('Erreur lors de la création de l\'utilisateur:', error);
@@ -258,6 +289,20 @@ const AdminPanel: React.FC = () => {
             </Alert>
           )}
           
+          <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            <Typography variant="body2" sx={{ mr: 1 }}>
+              API Standard
+            </Typography>
+            <Switch
+              checked={useAdminApi}
+              onChange={(e) => setUseAdminApi(e.target.checked)}
+              inputProps={{ 'aria-label': 'toggle API mode' }}
+            />
+            <Typography variant="body2" sx={{ ml: 1 }}>
+              API Admin
+            </Typography>
+          </Box>
+          
           <Box component="form" onSubmit={handleSubmit}>
             <TextField
               label="Email"
@@ -283,6 +328,18 @@ const AdminPanel: React.FC = () => {
               required
             />
             
+            <TextField
+              label="Confirmer le mot de passe"
+              type="password"
+              variant="outlined"
+              fullWidth
+              margin="normal"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={isLoading}
+              required
+            />
+            
             <FormControlLabel
               control={
                 <Checkbox
@@ -304,6 +361,18 @@ const AdminPanel: React.FC = () => {
               {isLoading ? <CircularProgress size={24} /> : 'Ajouter'}
             </Button>
           </Box>
+          
+          {!useAdminApi && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              En utilisant l'API standard, un email de confirmation sera envoyé à l'utilisateur.
+            </Alert>
+          )}
+          
+          {useAdminApi && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              En utilisant l'API Admin, l'utilisateur sera créé avec l'email déjà confirmé et pourra se connecter immédiatement.
+            </Alert>
+          )}
         </Paper>
       </TabPanel>
       
@@ -336,13 +405,14 @@ const AdminPanel: React.FC = () => {
                   <TableCell>Rôle</TableCell>
                   <TableCell>Créé le</TableCell>
                   <TableCell>Dernière connexion</TableCell>
+                  <TableCell>Email confirmé</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={6} align="center">
                       Aucun utilisateur trouvé
                     </TableCell>
                   </TableRow>
@@ -357,6 +427,7 @@ const AdminPanel: React.FC = () => {
                       </TableCell>
                       <TableCell>{formatDate(user.created_at)}</TableCell>
                       <TableCell>{formatDate(user.last_sign_in_at)}</TableCell>
+                      <TableCell>{user.email_confirmed_at ? 'Oui' : 'Non'}</TableCell>
                       <TableCell align="right">
                         <Tooltip title="Modifier">
                           <IconButton disabled>
