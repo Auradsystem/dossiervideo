@@ -34,10 +34,12 @@ import {
   Image as ImageIcon,
   ChevronDown,
   ChevronUp,
-  Trash as DeleteIcon
+  Trash as DeleteIcon,
+  FolderOpen
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { CameraType } from '../types/Camera';
+import ProjectManager from './ProjectManager';
 
 interface ResponsiveSidebarProps {
   open: boolean;
@@ -301,7 +303,8 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
     setNextCameraNumber,
     selectedIconType,
     setSelectedIconType,
-    clearCurrentPage
+    clearCurrentPage,
+    isAuthenticated
   } = useAppContext();
   
   const [fileInputKey, setFileInputKey] = useState(Date.now());
@@ -440,6 +443,25 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
           </Box>
         )}
         
+        {/* Section Projets */}
+        {isAuthenticated && (!isMobile || activeTab === 0) && (
+          <Box sx={{ p: 2 }}>
+            <SectionHeader 
+              title="Projets" 
+              isOpen={openSection === 'projects'} 
+              toggleSection={() => toggleSection('projects')} 
+            />
+            
+            <Collapse in={openSection === 'projects'} timeout="auto" unmountOnExit>
+              <Box sx={{ pl: 2, pr: 2, pt: 1 }}>
+                <ProjectManager />
+              </Box>
+            </Collapse>
+            
+            <Divider sx={{ my: 2 }} />
+          </Box>
+        )}
+        
         {/* Section Caméras */}
         {(!isMobile || activeTab === 1) && (
           <Box sx={{ p: 2 }}>
@@ -505,7 +527,8 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
     selectedCameraData, namingPattern, nextCameraNumber, selectedIconType,
     handleFileChange, handleCameraChange, handleDeleteCamera,
     handleNamingPatternChange, handleNextNumberChange, handleIconTypeChange,
-    toggleSection, clearCurrentPage, previewPdf, exportCurrentPage, exportPdf, onClose
+    toggleSection, clearCurrentPage, previewPdf, exportCurrentPage, exportPdf, onClose,
+    isAuthenticated
   ]);
   
   // Utiliser SwipeableDrawer sur mobile pour permettre de fermer en glissant
