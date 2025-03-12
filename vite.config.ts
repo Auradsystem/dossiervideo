@@ -13,6 +13,16 @@ export default defineConfig({
     },
   },
   server: {
-    hmr: false
+    // Configuration explicite du serveur pour éviter les erreurs WebSocket
+    host: 'localhost',
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      port: 5173,
+      clientPort: 5173,
+      overlay: true,
+    }
   },
 })

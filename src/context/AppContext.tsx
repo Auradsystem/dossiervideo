@@ -99,14 +99,31 @@ const safeLocalStorage = {
   }
 };
 
-// Fonction pour convertir les dates en chaînes et vice-versa
-const dateReviver = (key: string, value: any) => {
-  // Vérifier si la valeur ressemble à une date ISO
-  const dateFormat = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z$/;
-  if (typeof value === 'string' && dateFormat.test(value)) {
-    return new Date(value);
-  }
-  return value;
+// Fonction pour sérialiser les dates correctement
+const serializeWithDates = (obj: any): string => {
+  return JSON.stringify(obj, (key, value) => {
+    if (value instanceof Date) {
+      return {
+        __type: 'Date',
+        iso: value.toISOString()
+      };
+    }
+    return value;
+  });
+};
+
+// Fonction pour désérialiser les dates correctement
+const deserializeWithDates = (json: string): any => {
+  return JSON.parse(json, (key, value) => {
+    if (value && typeof value === 'object' && value.__type === 'Date') {
+      return new Date(value.iso);
+    }
+    // Compatibilité avec l'ancien format de date
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z$/.test(value)) {
+      return new Date(value);
+    }
+    return value;
+  });
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -147,9 +164,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const storedUsers = safeLocalStorage.getItem('plancam_users');
     if (storedUsers) {
       try {
-        // Utiliser le reviver pour gérer correctement les dates
-        const parsedUsers = JSON.parse(storedUsers, dateReviver);
+        // Utiliser la fonction de désérialisation améliorée
+        const parsedUsers = deserializeWithDates(storedUsers);
         setUsers(parsedUsers);
+        console.log('Utilisateurs chargés:', parsedUsers);
       } catch (error) {
         console.error('Erreur lors de la récupération des utilisateurs:', error);
         // Réinitialiser si erreur
@@ -176,7 +194,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       const initialUsers = [adminUser, defaultUser];
       setUsers(initialUsers);
-      safeLocalStorage.setItem('plancam_users', JSON.stringify(initialUsers));
+      safeLocalStorage.setItem('plancam_users', serializeWithDates(initialUsers));
+      console.log('Utilisateurs initialisés:', initialUsers);
     }
   }, []);
 
@@ -198,11 +217,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const auth = safeLocalStorage.getItem('plancam_auth');
     if (auth) {
       try {
-        // Utiliser le reviver pour gérer correctement les dates
-        const authData = JSON.parse(auth, dateReviver);
+        // Utiliser la fonction de désérialisation améliorée
+        const authData = deserializeWithDates(auth);
         setIsAuthenticated(true);
         setCurrentUser(authData.user);
         setIsAdmin(authData.user.isAdmin);
+        console.log('Authentification restaurée:', authData.user);
       } catch (error) {
         console.error('Erreur lors de la récupération de l\'authentification:', error);
         safeLocalStorage.removeItem('plancam_auth');
@@ -222,7 +242,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Sauvegarder les utilisateurs dans le localStorage à chaque modification
   useEffect(() => {
     if (users.length > 0) {
-      safeLocalStorage.setItem('plancam_users', JSON.stringify(users));
+      safeLocalStorage.setItem('plancam_users', serializeWithDates(users));
+      console.log('Utilisateurs sauvegardés:', users);
     }
   }, [users]);
 
@@ -248,8 +269,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsAuthenticated(true);
       setIsAdmin(updatedUser.isAdmin);
       
-      // Stocker l'authentification dans le localStorage
-      const authSuccess = safeLocalStorage.setItem('plancam_auth', JSON.stringify({
+      // Stocker l'authentification dans le localStorage avec sérialisation améliorée
+      const authSuccess = safeLocalStorage.setItem('plancam_auth', serializeWithDates({
         user: updatedUser
       }));
       
@@ -258,9 +279,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.warn('Impossible de stocker l\'authentification dans localStorage, mais la session est active en mémoire');
       }
       
+      console.log('Utilisateur connecté:', updatedUser);
       return true;
     }
     
+    console.log('Échec de connexion pour:', username);
     return false;
   };
 
@@ -270,6 +293,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsAdmin(false);
     setIsAdminMode(false);
     safeLocalStorage.removeItem('plancam_auth');
+    console.log('Utilisateur déconnecté');
   };
 
   // Fonctions de gestion des utilisateurs
@@ -283,12 +307,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     
     setUsers([...users, newUser]);
+    console.log('Nouvel utilisateur ajouté:', newUser);
   };
 
   const updateUser = (id: string, updates: Partial<User>) => {
     setUsers(users.map(user => {
       if (user.id === id) {
-        return { ...user, ...updates };
+        const updatedUser = { ...user, ...updates };
+        console.log('Utilisateur mis à jour:', updatedUser);
+        return updatedUser;
       }
       return user;
     }));
@@ -299,8 +326,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCurrentUser(updatedCurrentUser);
       setIsAdmin(updatedCurrentUser.isAdmin);
       
-      // Mettre à jour le localStorage
-      safeLocalStorage.setItem('plancam_auth', JSON.stringify({
+      // Mettre à jour le localStorage avec sérialisation améliorée
+      safeLocalStorage.setItem('plancam_auth', serializeWithDates({
         user: updatedCurrentUser
       }));
     }
@@ -321,6 +348,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     
     setUsers(users.filter(user => user.id !== id));
+    console.log('Utilisateur supprimé, ID:', id);
   };
 
   const addCamera = (x: number, y: number, type: CameraType) => {
