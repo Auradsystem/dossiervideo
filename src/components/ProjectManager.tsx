@@ -8,7 +8,6 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemSecondary,
   IconButton,
   Dialog,
   DialogActions,
@@ -35,7 +34,17 @@ import {
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 import { supabaseStorage } from '../lib/supabase';
-import { Project, ProjectFile } from '../types/Project';
+import { Project } from '../types/Project';
+
+interface ProjectFile {
+  name: string;
+  path: string;
+  url: string;
+  size: number;
+  type: string;
+  projectName: string;
+  uploadedAt: Date;
+}
 
 const ProjectManager: React.FC = () => {
   const { setPdfFile, currentUser } = useAppContext();
@@ -84,9 +93,9 @@ const ProjectManager: React.FC = () => {
       
       if (data) {
         const projectsList: Project[] = data.map(project => ({
+          id: project.path,
           name: project.name,
-          createdAt: new Date(project.createdAt || Date.now()),
-          userId: currentUser.id
+          createdAt: new Date(project.createdAt || Date.now())
         }));
         
         setProjects(projectsList);
@@ -119,7 +128,7 @@ const ProjectManager: React.FC = () => {
       if (data) {
         const filesList: ProjectFile[] = data.map(file => ({
           name: file.name,
-          path: file.name,
+          path: file.path,
           url: file.url,
           size: file.metadata?.size || 0,
           type: file.metadata?.mimetype || 'application/pdf',
@@ -150,21 +159,30 @@ const ProjectManager: React.FC = () => {
     setError(null);
     
     try {
-      // Créer un fichier vide pour initialiser le dossier du projet
-      const emptyFile = new Blob([''], { type: 'text/plain' });
-      const file = new File([emptyFile], '.project', { type: 'text/plain' });
-      
-      const { data, error } = await supabaseStorage.uploadPdf(file, newProjectName);
+      // Utiliser la fonction createProject du service supabaseStorage
+      const { data, error } = await supabaseStorage.createProject(newProjectName);
       
       if (error) throw error;
       
-      setSuccess(`Projet "${newProjectName}" créé avec succès`);
-      setNewProjectName('');
-      setNewProjectDescription('');
-      setNewProjectDialogOpen(false);
-      
-      // Recharger les projets
-      await loadProjects();
+      if (data) {
+        // Créer un nouvel objet projet
+        const newProject: Project = {
+          id: data.path,
+          name: data.name,
+          createdAt: new Date(data.createdAt)
+        };
+        
+        // Ajouter le projet à la liste
+        setProjects(prev => [...prev, newProject]);
+        
+        // Sélectionner le nouveau projet
+        setSelectedProject(newProject);
+        
+        setSuccess(`Projet "${newProjectName}" créé avec succès`);
+        setNewProjectName('');
+        setNewProjectDescription('');
+        setNewProjectDialogOpen(false);
+      }
     } catch (error: any) {
       console.error('Erreur lors de la création du projet:', error);
       setError('Impossible de créer le projet: ' + error.message);
@@ -344,9 +362,9 @@ const ProjectManager: React.FC = () => {
                 ) : (
                   projects.map((project) => (
                     <ListItem 
-                      key={project.name}
+                      key={project.id}
                       button
-                      selected={selectedProject?.name === project.name}
+                      selected={selectedProject?.id === project.id}
                       onClick={() => setSelectedProject(project)}
                     >
                       <FolderIcon sx={{ mr: 2, color: 'primary.main' }} />
