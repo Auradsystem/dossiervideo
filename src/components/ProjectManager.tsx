@@ -1,273 +1,385 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Typography,
-  Button,
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  Box, 
+  Typography, 
+  Button, 
+  List, 
+  ListItem, 
+  ListItemText, 
+  ListItemSecondaryAction, 
+  IconButton, 
+  Dialog, 
+  DialogTitle, 
+  DialogContent, 
+  DialogActions, 
   TextField,
-  Paper,
-  List,
-  ListItem,
-  ListItemText,
-  IconButton,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  Alert,
   CircularProgress,
+  Alert,
+  Paper,
   Divider,
   Grid,
-  Card,
-  CardContent,
-  CardActions,
+  Skeleton,
   Tooltip,
-  Chip
+  Snackbar
 } from '@mui/material';
-import { 
-  Add as AddIcon, 
-  Delete as DeleteIcon, 
-  Folder as FolderIcon, 
-  Description as FileIcon,
-  CloudUpload as UploadIcon,
-  Refresh as RefreshIcon
-} from '@mui/icons-material';
+import { Folder, File, Trash2, Download, Upload, Plus, RefreshCw, Eye } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { supabaseStorage } from '../lib/supabase';
-import { Project } from '../types/Project';
+import { supabaseStorage } from '../lib/supabaseStorage';
+
+interface Project {
+  id: string;
+  name: string;
+  files: ProjectFile[];
+}
 
 interface ProjectFile {
   name: string;
-  path: string;
-  url: string;
   size: number;
-  type: string;
-  projectName: string;
-  uploadedAt: Date;
+  created_at: string;
 }
 
 const ProjectManager: React.FC = () => {
-  const { setPdfFile, currentUser } = useAppContext();
+  const { currentUser, setPdfFile } = useAppContext();
   
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [loadingFiles, setLoadingFiles] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
-  // États pour les dialogues
-  const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
-  const [uploadFileDialogOpen, setUploadFileDialogOpen] = useState(false);
-  const [deleteConfirmDialogOpen, setDeleteConfirmDialogOpen] = useState(false);
-  const [fileToDelete, setFileToDelete] = useState<ProjectFile | null>(null);
+  const [newProjectDialogOpen, setNewProjectDialogOpen] = useState<boolean>(false);
+  const [newProjectName, setNewProjectName] = useState<string>('');
+  const [uploadDialogOpen, setUploadDialogOpen] = useState<boolean>(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   
-  // États pour les formulaires
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectDescription, setNewProjectDescription] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Fonction pour charger les projets avec debounce
+  const loadProjects = useCallback(async (forceRefresh = false) => {
+    if (!currentUser) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const { projects, error } = await supabaseStorage.listProjects(currentUser.id, forceRefresh);
+      
+      if (error) throw error;
+      
+      // Transformer les IDs de projet en objets projet
+      const projectObjects = projects.map(projectId => ({
+        id: projectId,
+        name: `Projet ${projectId.substring(0, 8)}`,
+        files: []
+      }));
+      
+      setProjects(projectObjects);
+      
+      if (projectObjects.length > 0 && !selectedProject) {
+        setSelectedProject(projectObjects[0].id);
+      }
+    } catch (err: any) {
+      console.error('Erreur lors du chargement des projets:', err);
+      setError('Impossible de charger les projets. Veuillez réessayer.');
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser, selectedProject]);
   
-  // Charger les projets au montage
-  useEffect(() => {
-    loadProjects();
+  // Fonction pour charger les fichiers d'un projet avec debounce
+  const loadProjectFiles = useCallback(async (projectId: string, forceRefresh = false) => {
+    if (!currentUser) return;
+    
+    setLoadingFiles(true);
+    setError(null);
+    
+    try {
+      const { files, error } = await supabaseStorage.listProjectFiles(currentUser.id, projectId, forceRefresh);
+      
+      if (error) throw error;
+      
+      setProjectFiles(files);
+    } catch (err: any) {
+      console.error('Erreur lors du chargement des fichiers:', err);
+      setError('Impossible de charger les fichiers. Veuillez réessayer.');
+    } finally {
+      setLoadingFiles(false);
+    }
   }, [currentUser]);
+  
+  // Charger les projets au chargement du composant
+  useEffect(() => {
+    if (currentUser) {
+      loadProjects();
+    }
+  }, [currentUser, loadProjects]);
   
   // Charger les fichiers du projet sélectionné
   useEffect(() => {
     if (selectedProject) {
-      loadProjectFiles(selectedProject.name);
+      loadProjectFiles(selectedProject);
+    } else {
+      setProjectFiles([]);
     }
-  }, [selectedProject]);
-  
-  // Fonction pour charger les projets
-  const loadProjects = async () => {
-    if (!currentUser) return;
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const { data, error } = await supabaseStorage.listUserProjects();
-      
-      if (error) throw error;
-      
-      if (data) {
-        const projectsList: Project[] = data.map(project => ({
-          id: project.path,
-          name: project.name,
-          createdAt: new Date(project.createdAt || Date.now())
-        }));
-        
-        setProjects(projectsList);
-        
-        // Si aucun projet n'est sélectionné et qu'il y a des projets, sélectionner le premier
-        if (!selectedProject && projectsList.length > 0) {
-          setSelectedProject(projectsList[0]);
-        }
-      }
-    } catch (error: any) {
-      console.error('Erreur lors du chargement des projets:', error);
-      setError('Impossible de charger les projets: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
-  // Fonction pour charger les fichiers d'un projet
-  const loadProjectFiles = async (projectName: string) => {
-    if (!currentUser) return;
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const { data, error } = await supabaseStorage.listProjectFiles(projectName);
-      
-      if (error) throw error;
-      
-      if (data) {
-        const filesList: ProjectFile[] = data.map(file => ({
-          name: file.name,
-          path: file.path,
-          url: file.url,
-          size: file.metadata?.size || 0,
-          type: file.metadata?.mimetype || 'application/pdf',
-          projectName: projectName,
-          uploadedAt: new Date(file.created_at || Date.now())
-        }));
-        
-        setProjectFiles(filesList);
-      }
-    } catch (error: any) {
-      console.error('Erreur lors du chargement des fichiers du projet:', error);
-      setError('Impossible de charger les fichiers: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [selectedProject, loadProjectFiles]);
   
   // Fonction pour créer un nouveau projet
-  const handleCreateProject = async () => {
-    if (!currentUser) return;
+  const createNewProject = async () => {
+    if (!currentUser || !newProjectName.trim()) return;
     
-    if (!newProjectName.trim()) {
-      setError('Le nom du projet est requis');
-      return;
-    }
-    
-    setIsLoading(true);
+    setLoading(true);
     setError(null);
     
     try {
-      // Utiliser la fonction createProject du service supabaseStorage
-      const { data, error } = await supabaseStorage.createProject(newProjectName);
+      // Générer un nouvel ID de projet
+      const projectId = crypto.randomUUID();
+      
+      // Créer un fichier vide pour initialiser le dossier du projet
+      const emptyFile = new File([""], ".project", { type: "text/plain" });
+      
+      const { success, error } = await supabaseStorage.uploadPdf(
+        currentUser.id,
+        emptyFile,
+        projectId,
+        ".project"
+      );
       
       if (error) throw error;
       
-      if (data) {
-        // Créer un nouvel objet projet
-        const newProject: Project = {
-          id: data.path,
-          name: data.name,
-          createdAt: new Date(data.createdAt)
-        };
-        
-        // Ajouter le projet à la liste
-        setProjects(prev => [...prev, newProject]);
-        
-        // Sélectionner le nouveau projet
-        setSelectedProject(newProject);
-        
-        setSuccess(`Projet "${newProjectName}" créé avec succès`);
-        setNewProjectName('');
-        setNewProjectDescription('');
-        setNewProjectDialogOpen(false);
-      }
-    } catch (error: any) {
-      console.error('Erreur lors de la création du projet:', error);
-      setError('Impossible de créer le projet: ' + error.message);
+      // Ajouter le nouveau projet à la liste
+      const newProject = {
+        id: projectId,
+        name: newProjectName,
+        files: []
+      };
+      
+      setProjects([...projects, newProject]);
+      setSelectedProject(projectId);
+      setSuccess('Projet créé avec succès');
+      
+      // Fermer le dialogue
+      setNewProjectDialogOpen(false);
+      setNewProjectName('');
+      
+      // Rafraîchir la liste des projets
+      await loadProjects(true);
+    } catch (err: any) {
+      console.error('Erreur lors de la création du projet:', err);
+      setError('Impossible de créer le projet. Veuillez réessayer.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
   
   // Fonction pour télécharger un fichier
-  const handleUploadFile = async () => {
-    if (!currentUser || !selectedProject || !selectedFile) return;
+  const uploadPdfToProject = async () => {
+    if (!currentUser || !selectedProject || !uploadFile) return;
     
-    setIsLoading(true);
+    setLoading(true);
     setError(null);
+    setUploadProgress(0);
     
     try {
-      const { data, error } = await supabaseStorage.uploadPdf(selectedFile, selectedProject.name);
+      // Simuler la progression du téléchargement
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          const newProgress = prev + Math.random() * 10;
+          return newProgress > 90 ? 90 : newProgress;
+        });
+      }, 300);
+      
+      const { success, error } = await supabaseStorage.uploadPdf(
+        currentUser.id,
+        uploadFile,
+        selectedProject
+      );
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
       
       if (error) throw error;
       
-      setSuccess(`Fichier "${selectedFile.name}" téléchargé avec succès`);
-      setSelectedFile(null);
-      setUploadFileDialogOpen(false);
-      
       // Recharger les fichiers du projet
-      await loadProjectFiles(selectedProject.name);
-    } catch (error: any) {
-      console.error('Erreur lors du téléchargement du fichier:', error);
-      setError('Impossible de télécharger le fichier: ' + error.message);
+      await loadProjectFiles(selectedProject, true);
+      
+      setSuccess('Fichier téléchargé avec succès');
+      
+      // Fermer le dialogue après un court délai pour montrer 100%
+      setTimeout(() => {
+        setUploadDialogOpen(false);
+        setUploadFile(null);
+        setUploadProgress(0);
+      }, 500);
+    } catch (err: any) {
+      console.error('Erreur lors du téléchargement du fichier:', err);
+      setError('Impossible de télécharger le fichier. Veuillez réessayer.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
+    }
+  };
+  
+  // Fonction pour télécharger un fichier
+  const downloadFile = async (filename: string) => {
+    if (!currentUser || !selectedProject) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const { downloadUrl, error } = await supabaseStorage.downloadPdf(
+        currentUser.id,
+        selectedProject,
+        filename
+      );
+      
+      if (error) throw error;
+      
+      // Ouvrir l'URL de téléchargement dans un nouvel onglet
+      if (downloadUrl) {
+        window.open(downloadUrl, '_blank');
+      }
+    } catch (err: any) {
+      console.error('Erreur lors du téléchargement du fichier:', err);
+      setError('Impossible de télécharger le fichier. Veuillez réessayer.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Fonction pour prévisualiser un fichier
+  const previewFile = async (filename: string) => {
+    if (!currentUser || !selectedProject) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Précharger le fichier pour améliorer les performances
+      await supabaseStorage.preloadPdf(currentUser.id, selectedProject, filename);
+      
+      const { downloadUrl, error } = await supabaseStorage.downloadPdf(
+        currentUser.id,
+        selectedProject,
+        filename
+      );
+      
+      if (error) throw error;
+      
+      // Ouvrir l'URL de prévisualisation dans un nouvel onglet
+      if (downloadUrl) {
+        window.open(downloadUrl, '_blank');
+      }
+    } catch (err: any) {
+      console.error('Erreur lors de la prévisualisation du fichier:', err);
+      setError('Impossible de prévisualiser le fichier. Veuillez réessayer.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Fonction pour charger un fichier dans l'éditeur
+  const loadFileInEditor = async (filename: string) => {
+    if (!currentUser || !selectedProject) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const { file, error } = await supabaseStorage.getPdfFile(
+        currentUser.id,
+        selectedProject,
+        filename
+      );
+      
+      if (error) throw error;
+      
+      if (file) {
+        // Convertir le Blob en File
+        const pdfFile = new File([file], filename, { type: 'application/pdf' });
+        
+        // Charger le fichier dans l'éditeur
+        setPdfFile(pdfFile);
+        
+        setSuccess('Fichier chargé dans l\'éditeur');
+      }
+    } catch (err: any) {
+      console.error('Erreur lors du chargement du fichier:', err);
+      setError('Impossible de charger le fichier. Veuillez réessayer.');
+    } finally {
+      setLoading(false);
     }
   };
   
   // Fonction pour supprimer un fichier
-  const handleDeleteFile = async () => {
-    if (!fileToDelete) return;
+  const deleteFile = async (filename: string) => {
+    if (!currentUser || !selectedProject) return;
     
-    setIsLoading(true);
+    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer le fichier "${filename}" ?`)) {
+      return;
+    }
+    
+    setLoading(true);
     setError(null);
     
     try {
-      const { success, error } = await supabaseStorage.deleteFile(fileToDelete.path);
+      const { success, error } = await supabaseStorage.deleteFile(
+        currentUser.id,
+        selectedProject,
+        filename
+      );
       
       if (error) throw error;
       
-      if (success) {
-        setSuccess(`Fichier "${fileToDelete.name}" supprimé avec succès`);
-        setFileToDelete(null);
-        setDeleteConfirmDialogOpen(false);
-        
-        // Recharger les fichiers du projet
-        if (selectedProject) {
-          await loadProjectFiles(selectedProject.name);
-        }
-      }
-    } catch (error: any) {
-      console.error('Erreur lors de la suppression du fichier:', error);
-      setError('Impossible de supprimer le fichier: ' + error.message);
+      // Recharger les fichiers du projet
+      await loadProjectFiles(selectedProject, true);
+      
+      setSuccess('Fichier supprimé avec succès');
+    } catch (err: any) {
+      console.error('Erreur lors de la suppression du fichier:', err);
+      setError('Impossible de supprimer le fichier. Veuillez réessayer.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
   
-  // Fonction pour charger un fichier PDF dans l'application
-  const handleLoadPdf = async (file: ProjectFile) => {
+  // Fonction pour supprimer un projet
+  const deleteProject = async (projectId: string) => {
+    if (!currentUser) return;
+    
+    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer ce projet et tous ses fichiers ?`)) {
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
     try {
-      setIsLoading(true);
+      const { success, error } = await supabaseStorage.deleteProject(
+        currentUser.id,
+        projectId
+      );
       
-      // Télécharger le fichier depuis l'URL
-      const response = await fetch(file.url);
-      const blob = await response.blob();
+      if (error) throw error;
       
-      // Créer un objet File à partir du Blob
-      const pdfFile = new File([blob], file.name, { type: 'application/pdf' });
+      // Supprimer le projet de la liste
+      setProjects(projects.filter(project => project.id !== projectId));
       
-      // Définir le fichier PDF dans le contexte de l'application
-      setPdfFile(pdfFile);
+      // Si le projet supprimé était sélectionné, sélectionner le premier projet restant
+      if (selectedProject === projectId) {
+        const remainingProjects = projects.filter(project => project.id !== projectId);
+        setSelectedProject(remainingProjects.length > 0 ? remainingProjects[0].id : null);
+      }
       
-      setSuccess(`Fichier "${file.name}" chargé avec succès`);
-    } catch (error: any) {
-      console.error('Erreur lors du chargement du fichier PDF:', error);
-      setError('Impossible de charger le fichier PDF: ' + error.message);
+      // Rafraîchir la liste des projets
+      await loadProjects(true);
+      
+      setSuccess('Projet supprimé avec succès');
+    } catch (err: any) {
+      console.error('Erreur lors de la suppression du projet:', err);
+      setError('Impossible de supprimer le projet. Veuillez réessayer.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
   
@@ -282,36 +394,98 @@ const ProjectManager: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
   
-  // Fonction pour formater la date
-  const formatDate = (date: Date): string => {
-    return new Intl.DateTimeFormat('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+  // Fonction pour gérer le changement de fichier
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      const file = event.target.files[0];
+      
+      // Vérifier si le fichier est un PDF
+      if (file.type !== 'application/pdf') {
+        setError('Seuls les fichiers PDF sont acceptés');
+        return;
+      }
+      
+      // Vérifier la taille du fichier (max 50 Mo)
+      if (file.size > 50 * 1024 * 1024) {
+        setError('Le fichier est trop volumineux (max 50 Mo)');
+        return;
+      }
+      
+      setUploadFile(file);
+    }
   };
   
+  // Afficher un message si l'utilisateur n'est pas connecté
+  if (!currentUser) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="info">
+          Veuillez vous connecter pour accéder au gestionnaire de projets.
+        </Alert>
+      </Box>
+    );
+  }
+  
+  // Rendu des squelettes de chargement pour les projets
+  const renderProjectSkeletons = () => (
+    Array(3).fill(0).map((_, index) => (
+      <ListItem key={`project-skeleton-${index}`}>
+        <Skeleton variant="circular" width={24} height={24} sx={{ mr: 2 }} />
+        <ListItemText
+          primary={<Skeleton width="80%" />}
+          secondary={<Skeleton width="40%" />}
+        />
+      </ListItem>
+    ))
+  );
+  
+  // Rendu des squelettes de chargement pour les fichiers
+  const renderFileSkeletons = () => (
+    Array(5).fill(0).map((_, index) => (
+      <ListItem key={`file-skeleton-${index}`}>
+        <Skeleton variant="circular" width={24} height={24} sx={{ mr: 2 }} />
+        <ListItemText
+          primary={<Skeleton width="70%" />}
+          secondary={<Skeleton width="50%" />}
+        />
+        <ListItemSecondaryAction>
+          <Skeleton variant="circular" width={30} height={30} sx={{ mr: 1 }} />
+          <Skeleton variant="circular" width={30} height={30} />
+        </ListItemSecondaryAction>
+      </ListItem>
+    ))
+  );
+  
   return (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h5" component="h2" sx={{ mb: 3 }}>
-        Gestionnaire de projets
+    <Box sx={{ p: 2 }}>
+      <Typography variant="h5" gutterBottom>
+        Gestionnaire de Projets
       </Typography>
       
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+      {/* Notifications */}
+      <Snackbar
+        open={!!error}
+        autoHideDuration={6000}
+        onClose={() => setError(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert onClose={() => setError(null)} severity="error" sx={{ width: '100%' }}>
           {error}
         </Alert>
-      )}
+      </Snackbar>
       
-      {success && (
-        <Alert severity="success" sx={{ mb: 3 }}>
+      <Snackbar
+        open={!!success}
+        autoHideDuration={3000}
+        onClose={() => setSuccess(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert onClose={() => setSuccess(null)} severity="success" sx={{ width: '100%' }}>
           {success}
         </Alert>
-      )}
+      </Snackbar>
       
-      <Grid container spacing={3}>
+      <Grid container spacing={2}>
         {/* Liste des projets */}
         <Grid item xs={12} md={4}>
           <Paper sx={{ p: 2, height: '100%' }}>
@@ -319,62 +493,72 @@ const ProjectManager: React.FC = () => {
               <Typography variant="h6">
                 Projets
               </Typography>
-              
               <Box>
-                <Button 
-                  variant="outlined" 
-                  startIcon={<RefreshIcon />}
-                  onClick={loadProjects}
-                  disabled={isLoading}
-                  size="small"
-                  sx={{ mr: 1 }}
-                >
-                  Actualiser
-                </Button>
-                
-                <Button 
-                  variant="contained" 
-                  startIcon={<AddIcon />}
-                  onClick={() => setNewProjectDialogOpen(true)}
-                  disabled={isLoading}
-                  size="small"
-                >
-                  Nouveau
-                </Button>
+                <Tooltip title="Rafraîchir">
+                  <IconButton 
+                    size="small" 
+                    onClick={() => loadProjects(true)}
+                    disabled={loading}
+                  >
+                    <RefreshCw size={18} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Nouveau projet">
+                  <Button
+                    startIcon={<Plus size={18} />}
+                    variant="contained"
+                    size="small"
+                    onClick={() => setNewProjectDialogOpen(true)}
+                    disabled={loading}
+                    sx={{ ml: 1 }}
+                  >
+                    Nouveau
+                  </Button>
+                </Tooltip>
               </Box>
             </Box>
             
             <Divider sx={{ mb: 2 }} />
             
-            {isLoading && projects.length === 0 ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-                <CircularProgress />
-              </Box>
+            {loading && projects.length === 0 ? (
+              <List dense>
+                {renderProjectSkeletons()}
+              </List>
+            ) : projects.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', p: 2 }}>
+                Aucun projet trouvé
+              </Typography>
             ) : (
-              <List>
-                {projects.length === 0 ? (
-                  <ListItem>
+              <List dense sx={{ maxHeight: '400px', overflow: 'auto' }}>
+                {projects.map((project) => (
+                  <ListItem
+                    key={project.id}
+                    button
+                    selected={selectedProject === project.id}
+                    onClick={() => setSelectedProject(project.id)}
+                  >
+                    <Folder size={20} style={{ marginRight: 8 }} />
                     <ListItemText 
-                      primary="Aucun projet" 
-                      secondary="Créez un nouveau projet pour commencer" 
+                      primary={project.name} 
+                      secondary={`ID: ${project.id.substring(0, 8)}...`}
                     />
+                    <ListItemSecondaryAction>
+                      <Tooltip title="Supprimer le projet">
+                        <IconButton 
+                          edge="end" 
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteProject(project.id);
+                          }}
+                          disabled={loading}
+                        >
+                          <Trash2 size={18} />
+                        </IconButton>
+                      </Tooltip>
+                    </ListItemSecondaryAction>
                   </ListItem>
-                ) : (
-                  projects.map((project) => (
-                    <ListItem 
-                      key={project.id}
-                      button
-                      selected={selectedProject?.id === project.id}
-                      onClick={() => setSelectedProject(project)}
-                    >
-                      <FolderIcon sx={{ mr: 2, color: 'primary.main' }} />
-                      <ListItemText 
-                        primary={project.name} 
-                        secondary={`Créé le ${formatDate(project.createdAt)}`} 
-                      />
-                    </ListItem>
-                  ))
-                )}
+                ))}
               </List>
             )}
           </Paper>
@@ -385,93 +569,110 @@ const ProjectManager: React.FC = () => {
           <Paper sx={{ p: 2, height: '100%' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="h6">
-                {selectedProject ? `Fichiers: ${selectedProject.name}` : 'Fichiers'}
+                {selectedProject 
+                  ? `Fichiers - ${projects.find(p => p.id === selectedProject)?.name || selectedProject}` 
+                  : 'Fichiers'}
               </Typography>
-              
-              {selectedProject && (
-                <Button 
-                  variant="contained" 
-                  startIcon={<UploadIcon />}
-                  onClick={() => setUploadFileDialogOpen(true)}
-                  disabled={isLoading || !selectedProject}
-                >
-                  Télécharger un PDF
-                </Button>
-              )}
+              <Box>
+                <Tooltip title="Rafraîchir">
+                  <IconButton 
+                    size="small" 
+                    onClick={() => selectedProject && loadProjectFiles(selectedProject, true)}
+                    disabled={loadingFiles || !selectedProject}
+                  >
+                    <RefreshCw size={18} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Télécharger un fichier">
+                  <Button
+                    startIcon={<Upload size={18} />}
+                    variant="contained"
+                    size="small"
+                    onClick={() => setUploadDialogOpen(true)}
+                    disabled={loading || !selectedProject}
+                    sx={{ ml: 1 }}
+                  >
+                    Télécharger
+                  </Button>
+                </Tooltip>
+              </Box>
             </Box>
             
             <Divider sx={{ mb: 2 }} />
             
             {!selectedProject ? (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="body1" color="text.secondary">
-                  Sélectionnez un projet pour voir ses fichiers
-                </Typography>
-              </Box>
-            ) : isLoading && projectFiles.length === 0 ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-                <CircularProgress />
-              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', p: 2 }}>
+                Sélectionnez un projet pour voir ses fichiers
+              </Typography>
+            ) : loadingFiles ? (
+              <List dense>
+                {renderFileSkeletons()}
+              </List>
+            ) : projectFiles.length === 0 || (projectFiles.length === 1 && projectFiles[0].name === '.project') ? (
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', p: 2 }}>
+                Aucun fichier dans ce projet
+              </Typography>
             ) : (
-              <Grid container spacing={2}>
-                {projectFiles.length === 0 ? (
-                  <Grid item xs={12}>
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <Typography variant="body1" color="text.secondary">
-                        Aucun fichier dans ce projet
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                        Téléchargez un PDF pour commencer
-                      </Typography>
-                    </Box>
-                  </Grid>
-                ) : (
-                  projectFiles.map((file) => (
-                    <Grid item xs={12} sm={6} md={4} key={file.path}>
-                      <Card>
-                        <CardContent>
-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                            <FileIcon sx={{ mr: 1, color: 'error.main' }} />
-                            <Typography variant="subtitle1" noWrap title={file.name}>
-                              {file.name}
-                            </Typography>
-                          </Box>
-                          
-                          <Typography variant="body2" color="text.secondary">
-                            Taille: {formatFileSize(file.size)}
-                          </Typography>
-                          
-                          <Typography variant="body2" color="text.secondary">
-                            Ajouté: {formatDate(file.uploadedAt)}
-                          </Typography>
-                        </CardContent>
-                        
-                        <CardActions>
-                          <Button 
-                            size="small" 
-                            onClick={() => handleLoadPdf(file)}
-                            disabled={isLoading}
-                          >
-                            Charger
-                          </Button>
-                          
-                          <Button 
-                            size="small" 
-                            color="error"
-                            onClick={() => {
-                              setFileToDelete(file);
-                              setDeleteConfirmDialogOpen(true);
+              <List dense sx={{ maxHeight: '400px', overflow: 'auto' }}>
+                {projectFiles
+                  .filter(file => file.name !== '.project') // Filtrer le fichier de projet caché
+                  .map((file) => (
+                    <ListItem
+                      key={file.name}
+                      button
+                      onClick={() => loadFileInEditor(file.name)}
+                    >
+                      <File size={20} style={{ marginRight: 8 }} />
+                      <ListItemText 
+                        primary={file.name} 
+                        secondary={`${formatFileSize(file.size)} • ${new Date(file.created_at).toLocaleString()}`}
+                      />
+                      <ListItemSecondaryAction>
+                        <Tooltip title="Prévisualiser">
+                          <IconButton 
+                            edge="end" 
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              previewFile(file.name);
                             }}
-                            disabled={isLoading}
+                            disabled={loading}
+                            sx={{ mr: 1 }}
                           >
-                            Supprimer
-                          </Button>
-                        </CardActions>
-                      </Card>
-                    </Grid>
-                  ))
-                )}
-              </Grid>
+                            <Eye size={18} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Télécharger">
+                          <IconButton 
+                            edge="end" 
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadFile(file.name);
+                            }}
+                            disabled={loading}
+                            sx={{ mr: 1 }}
+                          >
+                            <Download size={18} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Supprimer">
+                          <IconButton 
+                            edge="end" 
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteFile(file.name);
+                            }}
+                            disabled={loading}
+                          >
+                            <Trash2 size={18} />
+                          </IconButton>
+                        </Tooltip>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                  ))}
+              </List>
             )}
           </Paper>
         </Grid>
@@ -479,128 +680,99 @@ const ProjectManager: React.FC = () => {
       
       {/* Dialogue pour créer un nouveau projet */}
       <Dialog open={newProjectDialogOpen} onClose={() => setNewProjectDialogOpen(false)}>
-        <DialogTitle>Nouveau projet</DialogTitle>
+        <DialogTitle>Nouveau Projet</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            Créez un nouveau projet pour organiser vos fichiers PDF.
-          </DialogContentText>
-          
           <TextField
             autoFocus
             margin="dense"
             label="Nom du projet"
             type="text"
             fullWidth
-            variant="outlined"
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
-            disabled={isLoading}
-          />
-          
-          <TextField
-            margin="dense"
-            label="Description (optionnelle)"
-            type="text"
-            fullWidth
-            variant="outlined"
-            multiline
-            rows={3}
-            value={newProjectDescription}
-            onChange={(e) => setNewProjectDescription(e.target.value)}
-            disabled={isLoading}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setNewProjectDialogOpen(false)} disabled={isLoading}>
-            Annuler
-          </Button>
+          <Button onClick={() => setNewProjectDialogOpen(false)}>Annuler</Button>
           <Button 
-            onClick={handleCreateProject} 
-            variant="contained" 
-            disabled={isLoading || !newProjectName.trim()}
+            onClick={createNewProject} 
+            disabled={!newProjectName.trim() || loading}
+            variant="contained"
           >
-            {isLoading ? <CircularProgress size={24} /> : 'Créer'}
+            {loading ? <CircularProgress size={24} /> : 'Créer'}
           </Button>
         </DialogActions>
       </Dialog>
       
       {/* Dialogue pour télécharger un fichier */}
-      <Dialog open={uploadFileDialogOpen} onClose={() => setUploadFileDialogOpen(false)}>
-        <DialogTitle>Télécharger un PDF</DialogTitle>
+      <Dialog open={uploadDialogOpen} onClose={() => !loading && setUploadDialogOpen(false)}>
+        <DialogTitle>Télécharger un fichier PDF</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            Sélectionnez un fichier PDF à télécharger dans le projet {selectedProject?.name}.
-          </DialogContentText>
-          
-          <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Box sx={{ mt: 2 }}>
             <input
               accept="application/pdf"
               style={{ display: 'none' }}
               id="upload-file-button"
               type="file"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  setSelectedFile(e.target.files[0]);
-                }
-              }}
-              disabled={isLoading}
+              onChange={handleFileChange}
             />
             <label htmlFor="upload-file-button">
               <Button
                 variant="outlined"
                 component="span"
-                startIcon={<UploadIcon />}
-                disabled={isLoading}
+                fullWidth
+                disabled={loading}
               >
-                Sélectionner un fichier
+                Sélectionner un fichier PDF
               </Button>
             </label>
             
-            {selectedFile && (
+            {uploadFile && (
               <Box sx={{ mt: 2 }}>
-                <Chip
-                  label={`${selectedFile.name} (${formatFileSize(selectedFile.size)})`}
-                  onDelete={() => setSelectedFile(null)}
-                  disabled={isLoading}
-                />
+                <Typography variant="body2">
+                  Fichier sélectionné: {uploadFile.name} ({formatFileSize(uploadFile.size)})
+                </Typography>
+                
+                {loading && (
+                  <Box sx={{ width: '100%', mt: 2 }}>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      Téléchargement: {Math.round(uploadProgress)}%
+                    </Typography>
+                    <Box
+                      sx={{
+                        height: 10,
+                        borderRadius: 5,
+                        bgcolor: '#e0e0e0',
+                        position: 'relative',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          bottom: 0,
+                          width: `${uploadProgress}%`,
+                          bgcolor: 'primary.main',
+                          transition: 'width 0.3s ease'
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                )}
               </Box>
             )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setUploadFileDialogOpen(false)} disabled={isLoading}>
-            Annuler
-          </Button>
+          <Button onClick={() => setUploadDialogOpen(false)} disabled={loading}>Annuler</Button>
           <Button 
-            onClick={handleUploadFile} 
-            variant="contained" 
-            disabled={isLoading || !selectedFile}
+            onClick={uploadPdfToProject} 
+            disabled={!uploadFile || loading}
+            variant="contained"
           >
-            {isLoading ? <CircularProgress size={24} /> : 'Télécharger'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      {/* Dialogue de confirmation de suppression */}
-      <Dialog open={deleteConfirmDialogOpen} onClose={() => setDeleteConfirmDialogOpen(false)}>
-        <DialogTitle>Confirmer la suppression</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Êtes-vous sûr de vouloir supprimer le fichier "{fileToDelete?.name}" ?
-            Cette action est irréversible.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmDialogOpen(false)} disabled={isLoading}>
-            Annuler
-          </Button>
-          <Button 
-            onClick={handleDeleteFile} 
-            color="error" 
-            variant="contained" 
-            disabled={isLoading}
-          >
-            {isLoading ? <CircularProgress size={24} /> : 'Supprimer'}
+            {loading ? 'Téléchargement...' : 'Télécharger'}
           </Button>
         </DialogActions>
       </Dialog>
