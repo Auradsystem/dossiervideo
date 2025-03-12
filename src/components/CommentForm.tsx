@@ -1,111 +1,111 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Dialog, 
-  DialogTitle, 
-  DialogContent, 
-  DialogActions, 
+  Paper, 
   TextField, 
-  Button,
-  FormControlLabel,
-  Checkbox
+  Button, 
+  Box,
+  IconButton,
+  useMediaQuery,
+  useTheme
 } from '@mui/material';
-import { useAppContext } from '../context/AppContext';
+import { Close as CloseIcon } from '@mui/icons-material';
 
 interface CommentFormProps {
-  open: boolean;
-  onClose: () => void;
-  position: { x: number, y: number } | null;
+  position: { x: number, y: number };
+  onSubmit: (text: string) => void;
+  onCancel: () => void;
+  stageOffset: { x: number, y: number };
 }
 
-const CommentForm: React.FC<CommentFormProps> = ({ open, onClose, position }) => {
-  const { 
-    addComment, 
-    updateComment, 
-    selectedComment, 
-    comments,
-    selectedCamera
-  } = useAppContext();
+const CommentForm: React.FC<CommentFormProps> = ({ 
+  position, 
+  onSubmit, 
+  onCancel,
+  stageOffset
+}) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   
   const [text, setText] = useState('');
-  const [attachToCamera, setAttachToCamera] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   
-  // Si un commentaire est sélectionné, charger son texte
-  useEffect(() => {
-    if (selectedComment) {
-      const comment = comments.find(c => c.id === selectedComment);
-      if (comment) {
-        setText(comment.text);
-        setAttachToCamera(!!comment.cameraId);
-      }
-    } else {
-      setText('');
-      setAttachToCamera(!!selectedCamera);
-    }
-  }, [selectedComment, comments, selectedCamera]);
-
-  const handleSubmit = () => {
-    if (text.trim() === '') return;
-    
-    if (selectedComment) {
-      // Mise à jour d'un commentaire existant
-      updateComment(selectedComment, {
-        text,
-        cameraId: attachToCamera ? selectedCamera : undefined
-      });
-    } else if (position) {
-      // Création d'un nouveau commentaire
-      addComment(
-        position.x, 
-        position.y, 
-        text,
-        attachToCamera ? selectedCamera : undefined
-      );
-    }
-    
-    onClose();
+  // Calculer la position absolue du formulaire
+  const formPosition = {
+    x: position.x + stageOffset.x,
+    y: position.y + stageOffset.y
   };
-
+  
+  // Focus sur le champ de texte lors du montage
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
+  
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (text.trim()) {
+      onSubmit(text);
+    }
+  };
+  
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        {selectedComment ? 'Modifier le commentaire' : 'Ajouter un commentaire'}
-      </DialogTitle>
-      <DialogContent>
+    <Paper
+      elevation={3}
+      sx={{
+        position: 'absolute',
+        left: formPosition.x,
+        top: formPosition.y,
+        width: isMobile ? 250 : 300,
+        p: 2,
+        zIndex: 1000,
+        transform: 'translate(-50%, -50%)',
+        borderRadius: 2
+      }}
+    >
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+        <IconButton 
+          size="small" 
+          onClick={onCancel}
+          sx={{ p: 0.5 }}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Box>
+      
+      <form onSubmit={handleSubmit}>
         <TextField
-          autoFocus
-          margin="dense"
-          label="Texte du commentaire"
-          type="text"
-          fullWidth
+          inputRef={inputRef}
           multiline
-          rows={4}
+          rows={3}
+          placeholder="Ajouter un commentaire..."
+          variant="outlined"
+          fullWidth
           value={text}
           onChange={(e) => setText(e.target.value)}
-          variant="outlined"
+          size="small"
+          sx={{ mb: 2 }}
         />
         
-        {selectedCamera && (
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={attachToCamera}
-                onChange={(e) => setAttachToCamera(e.target.checked)}
-                color="primary"
-              />
-            }
-            label="Attacher à la caméra sélectionnée"
-          />
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} color="primary">
-          Annuler
-        </Button>
-        <Button onClick={handleSubmit} color="primary" variant="contained">
-          {selectedComment ? 'Mettre à jour' : 'Ajouter'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+          <Button 
+            variant="outlined" 
+            size="small" 
+            onClick={onCancel}
+          >
+            Annuler
+          </Button>
+          <Button 
+            variant="contained" 
+            size="small" 
+            type="submit"
+            disabled={!text.trim()}
+          >
+            Ajouter
+          </Button>
+        </Box>
+      </form>
+    </Paper>
   );
 };
 

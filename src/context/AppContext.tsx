@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
 import { Comment } from '../types/Comment';
+import { User } from '../types/User';
 
 // Interface pour stocker les caméras par page
 interface PageCameras {
@@ -55,6 +56,15 @@ interface AppContextType {
   setSelectedComment: (id: string | null) => void;
   isAddingComment: boolean;
   setIsAddingComment: (isAdding: boolean) => void;
+  // Nouvelles fonctionnalités pour la gestion des utilisateurs
+  currentUser: User | null;
+  isAdmin: boolean;
+  users: User[];
+  addUser: (username: string, password: string, isAdmin: boolean) => void;
+  updateUser: (id: string, updates: Partial<User>) => void;
+  deleteUser: (id: string) => void;
+  isAdminMode: boolean;
+  setIsAdminMode: (isAdmin: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -79,11 +89,55 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedComment, setSelectedComment] = useState<string | null>(null);
   const [isAddingComment, setIsAddingComment] = useState<boolean>(false);
 
+  // Nouveaux états pour la gestion des utilisateurs
+  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
+
   // Caméras de la page courante
   const cameras = pageCameras[page] || [];
   
   // Commentaires de la page courante
   const comments = pageComments[page] || [];
+
+  // Initialisation des utilisateurs
+  useEffect(() => {
+    // Récupérer les utilisateurs du localStorage
+    const storedUsers = localStorage.getItem('plancam_users');
+    if (storedUsers) {
+      try {
+        const parsedUsers = JSON.parse(storedUsers);
+        setUsers(parsedUsers);
+      } catch (error) {
+        console.error('Erreur lors de la récupération des utilisateurs:', error);
+        // Réinitialiser si erreur
+        setUsers([]);
+      }
+    } else {
+      // Créer l'utilisateur admin par défaut si aucun utilisateur n'existe
+      const adminUser: User = {
+        id: uuidv4(),
+        username: 'Dali',
+        password: 'Dali',
+        isAdmin: true,
+        createdAt: new Date()
+      };
+      
+      // Ajouter l'utilisateur par défaut (xcel/video)
+      const defaultUser: User = {
+        id: uuidv4(),
+        username: 'xcel',
+        password: 'video',
+        isAdmin: false,
+        createdAt: new Date()
+      };
+      
+      const initialUsers = [adminUser, defaultUser];
+      setUsers(initialUsers);
+      localStorage.setItem('plancam_users', JSON.stringify(initialUsers));
+    }
+  }, []);
 
   // Journalisation pour le débogage
   useEffect(() => {
@@ -101,8 +155,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Check for existing authentication on mount
   useEffect(() => {
     const auth = localStorage.getItem('plancam_auth');
-    if (auth === 'true') {
-      setIsAuthenticated(true);
+    if (auth) {
+      try {
+        const authData = JSON.parse(auth);
+        setIsAuthenticated(true);
+        setCurrentUser(authData.user);
+        setIsAdmin(authData.user.isAdmin);
+      } catch (error) {
+        console.error('Erreur lors de la récupération de l\'authentification:', error);
+        localStorage.removeItem('plancam_auth');
+      }
     }
   }, []);
 
@@ -115,18 +177,103 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [previewUrl]);
 
+  // Sauvegarder les utilisateurs dans le localStorage à chaque modification
+  useEffect(() => {
+    if (users.length > 0) {
+      localStorage.setItem('plancam_users', JSON.stringify(users));
+    }
+  }, [users]);
+
   const login = (username: string, password: string): boolean => {
-    if (username === 'xcel' && password === 'video') {
+    // Rechercher l'utilisateur
+    const user = users.find(u => 
+      u.username.toLowerCase() === username.toLowerCase() && 
+      u.password === password
+    );
+    
+    if (user) {
+      // Mettre à jour la date de dernière connexion
+      const updatedUser = {
+        ...user,
+        lastLogin: new Date()
+      };
+      
+      // Mettre à jour l'utilisateur dans la liste
+      setUsers(users.map(u => u.id === user.id ? updatedUser : u));
+      
+      // Définir l'utilisateur courant et l'état d'authentification
+      setCurrentUser(updatedUser);
       setIsAuthenticated(true);
-      localStorage.setItem('plancam_auth', 'true');
+      setIsAdmin(updatedUser.isAdmin);
+      
+      // Stocker l'authentification dans le localStorage
+      localStorage.setItem('plancam_auth', JSON.stringify({
+        user: updatedUser
+      }));
+      
       return true;
     }
+    
     return false;
   };
 
   const logout = () => {
     setIsAuthenticated(false);
+    setCurrentUser(null);
+    setIsAdmin(false);
+    setIsAdminMode(false);
     localStorage.removeItem('plancam_auth');
+  };
+
+  // Fonctions de gestion des utilisateurs
+  const addUser = (username: string, password: string, isAdmin: boolean) => {
+    const newUser: User = {
+      id: uuidv4(),
+      username,
+      password,
+      isAdmin,
+      createdAt: new Date()
+    };
+    
+    setUsers([...users, newUser]);
+  };
+
+  const updateUser = (id: string, updates: Partial<User>) => {
+    setUsers(users.map(user => {
+      if (user.id === id) {
+        return { ...user, ...updates };
+      }
+      return user;
+    }));
+    
+    // Si l'utilisateur courant est mis à jour, mettre à jour également l'utilisateur courant
+    if (currentUser && currentUser.id === id) {
+      const updatedCurrentUser = { ...currentUser, ...updates };
+      setCurrentUser(updatedCurrentUser);
+      setIsAdmin(updatedCurrentUser.isAdmin);
+      
+      // Mettre à jour le localStorage
+      localStorage.setItem('plancam_auth', JSON.stringify({
+        user: updatedCurrentUser
+      }));
+    }
+  };
+
+  const deleteUser = (id: string) => {
+    // Empêcher la suppression de l'utilisateur admin principal
+    const userToDelete = users.find(u => u.id === id);
+    if (userToDelete && userToDelete.username === 'Dali') {
+      alert('Impossible de supprimer l\'administrateur principal');
+      return;
+    }
+    
+    // Empêcher la suppression de l'utilisateur courant
+    if (currentUser && currentUser.id === id) {
+      alert('Impossible de supprimer votre propre compte');
+      return;
+    }
+    
+    setUsers(users.filter(user => user.id !== id));
   };
 
   const addCamera = (x: number, y: number, type: CameraType) => {
@@ -609,7 +756,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       selectedComment,
       setSelectedComment,
       isAddingComment,
-      setIsAddingComment
+      setIsAddingComment,
+      // Nouvelles valeurs pour la gestion des utilisateurs
+      currentUser,
+      isAdmin,
+      users,
+      addUser,
+      updateUser,
+      deleteUser,
+      isAdminMode,
+      setIsAdminMode
     }}>
       {children}
     </AppContext.Provider>
