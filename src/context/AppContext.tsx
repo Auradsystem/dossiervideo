@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
@@ -158,6 +158,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Commentaires de la page courante
   const comments = pageComments[page] || [];
 
+  // Fonction pour sauvegarder les utilisateurs dans le localStorage
+  const saveUsers = useCallback((updatedUsers: User[]) => {
+    if (updatedUsers.length > 0) {
+      const serialized = serializeWithDates(updatedUsers);
+      const success = safeLocalStorage.setItem('plancam_users', serialized);
+      console.log('Utilisateurs sauvegardés dans localStorage:', { success, count: updatedUsers.length });
+      return success;
+    }
+    return false;
+  }, []);
+
   // Initialisation des utilisateurs
   useEffect(() => {
     // Récupérer les utilisateurs du localStorage
@@ -171,33 +182,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } catch (error) {
         console.error('Erreur lors de la récupération des utilisateurs:', error);
         // Réinitialiser si erreur
-        setUsers([]);
+        initializeDefaultUsers();
       }
     } else {
-      // Créer l'utilisateur admin par défaut si aucun utilisateur n'existe
-      const adminUser: User = {
-        id: uuidv4(),
-        username: 'Dali',
-        password: 'Dali',
-        isAdmin: true,
-        createdAt: new Date()
-      };
-      
-      // Ajouter l'utilisateur par défaut (xcel/video)
-      const defaultUser: User = {
-        id: uuidv4(),
-        username: 'xcel',
-        password: 'video',
-        isAdmin: false,
-        createdAt: new Date()
-      };
-      
-      const initialUsers = [adminUser, defaultUser];
-      setUsers(initialUsers);
-      safeLocalStorage.setItem('plancam_users', serializeWithDates(initialUsers));
-      console.log('Utilisateurs initialisés:', initialUsers);
+      initializeDefaultUsers();
     }
   }, []);
+
+  // Fonction pour initialiser les utilisateurs par défaut
+  const initializeDefaultUsers = () => {
+    // Créer l'utilisateur admin par défaut si aucun utilisateur n'existe
+    const adminUser: User = {
+      id: uuidv4(),
+      username: 'Dali',
+      password: 'Dali',
+      isAdmin: true,
+      createdAt: new Date()
+    };
+    
+    // Ajouter l'utilisateur par défaut (xcel/video)
+    const defaultUser: User = {
+      id: uuidv4(),
+      username: 'xcel',
+      password: 'video',
+      isAdmin: false,
+      createdAt: new Date()
+    };
+    
+    const initialUsers = [adminUser, defaultUser];
+    setUsers(initialUsers);
+    saveUsers(initialUsers);
+    console.log('Utilisateurs initialisés:', initialUsers);
+  };
 
   // Journalisation pour le débogage
   useEffect(() => {
@@ -241,11 +257,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Sauvegarder les utilisateurs dans le localStorage à chaque modification
   useEffect(() => {
-    if (users.length > 0) {
-      safeLocalStorage.setItem('plancam_users', serializeWithDates(users));
-      console.log('Utilisateurs sauvegardés:', users);
-    }
-  }, [users]);
+    saveUsers(users);
+  }, [users, saveUsers]);
 
   const login = (username: string, password: string): boolean => {
     // Rechercher l'utilisateur
@@ -262,7 +275,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
       
       // Mettre à jour l'utilisateur dans la liste
-      setUsers(users.map(u => u.id === user.id ? updatedUser : u));
+      const updatedUsers = users.map(u => u.id === user.id ? updatedUser : u);
+      setUsers(updatedUsers);
       
       // Définir l'utilisateur courant et l'état d'authentification
       setCurrentUser(updatedUser);
@@ -273,6 +287,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const authSuccess = safeLocalStorage.setItem('plancam_auth', serializeWithDates({
         user: updatedUser
       }));
+      
+      // Sauvegarder les utilisateurs mis à jour
+      saveUsers(updatedUsers);
       
       // Même si localStorage échoue, l'authentification en mémoire fonctionne
       if (!authSuccess) {
@@ -306,19 +323,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date()
     };
     
-    setUsers([...users, newUser]);
-    console.log('Nouvel utilisateur ajouté:', newUser);
+    // Mettre à jour l'état des utilisateurs
+    const updatedUsers = [...users, newUser];
+    setUsers(updatedUsers);
+    
+    // Sauvegarder immédiatement dans localStorage
+    const saved = saveUsers(updatedUsers);
+    
+    console.log('Nouvel utilisateur ajouté:', { user: newUser, saved, totalUsers: updatedUsers.length });
+    
+    // Vérifier si la sauvegarde a réussi
+    if (!saved) {
+      console.error('Échec de la sauvegarde du nouvel utilisateur dans localStorage');
+      // Essayer une autre approche de sauvegarde si nécessaire
+    }
+    
+    return newUser;
   };
 
   const updateUser = (id: string, updates: Partial<User>) => {
-    setUsers(users.map(user => {
+    // Créer une nouvelle liste d'utilisateurs avec les mises à jour
+    const updatedUsers = users.map(user => {
       if (user.id === id) {
         const updatedUser = { ...user, ...updates };
         console.log('Utilisateur mis à jour:', updatedUser);
         return updatedUser;
       }
       return user;
-    }));
+    });
+    
+    // Mettre à jour l'état
+    setUsers(updatedUsers);
+    
+    // Sauvegarder dans localStorage
+    saveUsers(updatedUsers);
     
     // Si l'utilisateur courant est mis à jour, mettre à jour également l'utilisateur courant
     if (currentUser && currentUser.id === id) {
@@ -347,7 +385,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
     
-    setUsers(users.filter(user => user.id !== id));
+    // Filtrer l'utilisateur à supprimer
+    const updatedUsers = users.filter(user => user.id !== id);
+    setUsers(updatedUsers);
+    
+    // Sauvegarder dans localStorage
+    saveUsers(updatedUsers);
+    
     console.log('Utilisateur supprimé, ID:', id);
   };
 

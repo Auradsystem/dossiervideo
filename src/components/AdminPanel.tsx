@@ -63,6 +63,11 @@ const AdminPanel: React.FC = () => {
     }
   }, [isAdmin]);
 
+  // Ajouter un log pour vérifier les utilisateurs au chargement
+  useEffect(() => {
+    console.log('AdminPanel - Liste des utilisateurs chargée:', users);
+  }, [users]);
+
   const handleOpenAddDialog = () => {
     setDialogMode('add');
     setUsername('');
@@ -137,12 +142,28 @@ const AdminPanel: React.FC = () => {
     try {
       if (dialogMode === 'add') {
         // Ajouter un nouvel utilisateur
+        console.log('AdminPanel - Tentative d\'ajout d\'utilisateur:', { username, isAdmin: isUserAdmin });
         addUser(username, password, isUserAdmin);
-        setSnackbar({
-          open: true,
-          message: 'Utilisateur ajouté avec succès',
-          severity: 'success'
-        });
+        
+        // Vérifier si l'utilisateur a bien été ajouté
+        setTimeout(() => {
+          const userAdded = users.some(u => u.username.toLowerCase() === username.toLowerCase());
+          console.log('AdminPanel - Vérification après ajout:', { userAdded, usersCount: users.length });
+          
+          if (userAdded) {
+            setSnackbar({
+              open: true,
+              message: 'Utilisateur ajouté avec succès',
+              severity: 'success'
+            });
+          } else {
+            setSnackbar({
+              open: true,
+              message: 'Problème lors de l\'ajout de l\'utilisateur',
+              severity: 'error'
+            });
+          }
+        }, 100);
       } else if (selectedUser) {
         // Mettre à jour un utilisateur existant
         const updates: Partial<User> = {
@@ -155,6 +176,7 @@ const AdminPanel: React.FC = () => {
           updates.password = password;
         }
         
+        console.log('AdminPanel - Mise à jour de l\'utilisateur:', { id: selectedUser.id, updates });
         updateUser(selectedUser.id, updates);
         setSnackbar({
           open: true,
@@ -167,12 +189,18 @@ const AdminPanel: React.FC = () => {
     } catch (error) {
       console.error('Erreur lors de la gestion de l\'utilisateur:', error);
       setError('Une erreur est survenue. Veuillez réessayer.');
+      setSnackbar({
+        open: true,
+        message: 'Erreur lors de la gestion de l\'utilisateur',
+        severity: 'error'
+      });
     }
   };
 
   const handleDeleteUser = (user: User) => {
     if (window.confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur ${user.username} ?`)) {
       try {
+        console.log('AdminPanel - Suppression de l\'utilisateur:', user);
         deleteUser(user.id);
         setSnackbar({
           open: true,
