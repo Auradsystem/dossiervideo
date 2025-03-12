@@ -4,6 +4,7 @@ import { User as AppUser } from '../types/User';
 // Configuration Supabase
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://kvoezelnkzfvyikicjyr.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2b2V6ZWxua3pmdnlpa2ljanlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE4MDkwMzIsImV4cCI6MjA1NzM4NTAzMn0.Hf3ohn_zlFRQG8kAiVm58Ng4EGkV2HLTXlpwkkp_CiM';
+const SUPABASE_SERVICE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
 
 // Créer le client Supabase avec la clé anonyme pour l'accès client
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -18,21 +19,45 @@ export const supabaseAuth = {
   // Inscription d'un nouvel utilisateur
   signUp: async (email: string, password: string, metadata: UserMetadata = {}) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: metadata
-        }
-      });
+      // Vérifier si la clé de service est disponible pour utiliser l'API admin
+      const serviceClient = getServiceSupabase();
       
-      if (error) throw error;
-      
-      return { 
-        user: data.user ? mapSupabaseUser(data.user) : null, 
-        session: data.session,
-        error: null 
-      };
+      if (serviceClient) {
+        // Utiliser l'API admin pour créer un utilisateur avec email confirmé
+        const { data, error } = await serviceClient.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: metadata
+        });
+        
+        if (error) throw error;
+        
+        return { 
+          user: data.user ? mapSupabaseUser(data.user) : null, 
+          session: null,
+          error: null 
+        };
+      } else {
+        // Fallback à l'API standard si la clé de service n'est pas disponible
+        console.warn('Clé de service non disponible, utilisation de l\'API standard pour l\'inscription');
+        
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: metadata
+          }
+        });
+        
+        if (error) throw error;
+        
+        return { 
+          user: data.user ? mapSupabaseUser(data.user) : null, 
+          session: data.session,
+          error: null 
+        };
+      }
     } catch (error: any) {
       console.error('Erreur lors de l\'inscription:', error);
       return { user: null, session: null, error };
@@ -140,48 +165,53 @@ function mapSupabaseUser(supabaseUser: any): AppUser {
 // Fonction pour initialiser les utilisateurs par défaut
 export const initializeDefaultUsers = async (): Promise<void> => {
   try {
-    // Vérifier si l'utilisateur admin existe déjà
-    const { data: adminData, error: adminError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', 'admin@plancam.com')
-      .single();
-    
-    if (adminError && adminError.code !== 'PGRST116') {
-      console.error('Erreur lors de la vérification de l\'admin:', adminError);
+    // Vérifier si la clé de service est disponible
+    const serviceClient = getServiceSupabase();
+    if (!serviceClient) {
+      console.warn('Clé de service non disponible, impossible d\'initialiser les utilisateurs par défaut');
+      return;
     }
     
-    // Si l'admin n'existe pas, le créer
-    if (!adminData) {
-      const { error } = await supabaseAuth.signUp('admin@plancam.com', 'Dali', { is_admin: true });
-      
-      if (error) {
-        console.error('Erreur lors de la création de l\'admin:', error);
-      } else {
-        console.log('Utilisateur admin créé avec succès');
-      }
+    // Vérifier si des utilisateurs existent déjà
+    const { data: usersData, error: usersError } = await serviceClient.auth.admin.listUsers();
+    
+    if (usersError) {
+      console.error('Erreur lors de la vérification des utilisateurs existants:', usersError);
+      return;
     }
     
-    // Vérifier si l'utilisateur par défaut existe déjà
-    const { data: defaultUserData, error: defaultUserError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', 'user@plancam.com')
-      .single();
-    
-    if (defaultUserError && defaultUserError.code !== 'PGRST116') {
-      console.error('Erreur lors de la vérification de l\'utilisateur par défaut:', defaultUserError);
+    // Si des utilisateurs existent déjà, ne pas créer les utilisateurs par défaut
+    if (usersData && usersData.users.length > 0) {
+      console.log('Des utilisateurs existent déjà, pas besoin de créer les utilisateurs par défaut');
+      return;
     }
     
-    // Si l'utilisateur par défaut n'existe pas, le créer
-    if (!defaultUserData) {
-      const { error } = await supabaseAuth.signUp('user@plancam.com', 'video', { is_admin: false });
-      
-      if (error) {
-        console.error('Erreur lors de la création de l\'utilisateur par défaut:', error);
-      } else {
-        console.log('Utilisateur par défaut créé avec succès');
-      }
+    // Créer l'utilisateur admin
+    const { error: adminError } = await serviceClient.auth.admin.createUser({
+      email: 'admin@plancam.com',
+      password: 'Dali',
+      email_confirm: true,
+      user_metadata: { is_admin: true }
+    });
+    
+    if (adminError) {
+      console.error('Erreur lors de la création de l\'admin:', adminError);
+    } else {
+      console.log('Utilisateur admin créé avec succès');
+    }
+    
+    // Créer l'utilisateur par défaut
+    const { error: userError } = await serviceClient.auth.admin.createUser({
+      email: 'user@plancam.com',
+      password: 'video',
+      email_confirm: true,
+      user_metadata: { is_admin: false }
+    });
+    
+    if (userError) {
+      console.error('Erreur lors de la création de l\'utilisateur par défaut:', userError);
+    } else {
+      console.log('Utilisateur par défaut créé avec succès');
     }
   } catch (error) {
     console.error('Erreur lors de l\'initialisation des utilisateurs par défaut:', error);
@@ -190,10 +220,9 @@ export const initializeDefaultUsers = async (): Promise<void> => {
 
 // Fonction pour obtenir un client Supabase avec la clé de service (pour les opérations admin)
 export const getServiceSupabase = () => {
-  const serviceKey = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
-  if (!serviceKey) {
-    console.error('Clé de service Supabase non définie');
+  if (!SUPABASE_SERVICE_KEY) {
+    console.warn('Clé de service Supabase non définie');
     return null;
   }
-  return createClient(SUPABASE_URL, serviceKey);
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 };

@@ -28,7 +28,7 @@ import {
 } from '@mui/material';
 import { Delete as DeleteIcon, Edit as EditIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
-import { supabase } from '../lib/supabase';
+import { supabase, getServiceSupabase } from '../lib/supabase';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -72,21 +72,32 @@ const AdminPanel: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [serviceKeyMissing, setServiceKeyMissing] = useState(false);
 
   // Charger les utilisateurs
   const loadUsers = async () => {
     setIsLoadingUsers(true);
     try {
-      const { data, error } = await supabase.auth.admin.listUsers();
+      // Utiliser le client avec la clé de service pour les opérations admin
+      const serviceClient = getServiceSupabase();
+      
+      if (!serviceClient) {
+        setServiceKeyMissing(true);
+        setError('Clé de service Supabase manquante. Impossible de charger les utilisateurs.');
+        setIsLoadingUsers(false);
+        return;
+      }
+      
+      const { data, error } = await serviceClient.auth.admin.listUsers();
       
       if (error) throw error;
       
       if (data) {
         setUsers(data.users);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur lors du chargement des utilisateurs:', error);
-      setError('Impossible de charger la liste des utilisateurs');
+      setError('Impossible de charger la liste des utilisateurs: ' + error.message);
     } finally {
       setIsLoadingUsers(false);
     }
@@ -129,21 +140,38 @@ const AdminPanel: React.FC = () => {
         return;
       }
       
-      // Créer un nouvel utilisateur
-      const success = await register(email, password, isAdmin);
+      // Utiliser le client avec la clé de service pour créer un utilisateur
+      const serviceClient = getServiceSupabase();
       
-      if (success) {
-        setSuccess(`L'utilisateur ${email} a été créé`);
+      if (!serviceClient) {
+        setServiceKeyMissing(true);
+        setError('Clé de service Supabase manquante. Impossible de créer un utilisateur.');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Créer un nouvel utilisateur avec le client de service
+      const { data, error: createError } = await serviceClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true, // Confirmer automatiquement l'email
+        user_metadata: { is_admin: isAdmin }
+      });
+      
+      if (createError) throw createError;
+      
+      if (data.user) {
+        setSuccess(`L'utilisateur ${email} a été créé avec succès`);
         resetForm();
         
         // Recharger la liste des utilisateurs
         await loadUsers();
       } else {
-        setError('Erreur lors de la création de l\'utilisateur');
+        setError('Erreur lors de la création de l\'utilisateur: Aucune donnée retournée');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur lors de la création de l\'utilisateur:', error);
-      setError(error instanceof Error ? error.message : 'Une erreur est survenue');
+      setError(error.message || 'Une erreur est survenue lors de la création de l\'utilisateur');
     } finally {
       setIsLoading(false);
     }
@@ -161,11 +189,49 @@ const AdminPanel: React.FC = () => {
     }).format(new Date(dateString));
   };
 
+  // Supprimer un utilisateur
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      setIsLoading(true);
+      
+      // Utiliser le client avec la clé de service pour supprimer un utilisateur
+      const serviceClient = getServiceSupabase();
+      
+      if (!serviceClient) {
+        setServiceKeyMissing(true);
+        setError('Clé de service Supabase manquante. Impossible de supprimer l\'utilisateur.');
+        setIsLoading(false);
+        return;
+      }
+      
+      const { error } = await serviceClient.auth.admin.deleteUser(userId);
+      
+      if (error) throw error;
+      
+      setSuccess('Utilisateur supprimé avec succès');
+      
+      // Recharger la liste des utilisateurs
+      await loadUsers();
+    } catch (error: any) {
+      console.error('Erreur lors de la suppression de l\'utilisateur:', error);
+      setError(error.message || 'Une erreur est survenue lors de la suppression de l\'utilisateur');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <Box sx={{ p: 3, maxWidth: '1200px', mx: 'auto' }}>
       <Typography variant="h5" component="h2" sx={{ mb: 3 }}>
         Administration
       </Typography>
+      
+      {serviceKeyMissing && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          La clé de service Supabase n'est pas configurée. Certaines fonctionnalités d'administration ne seront pas disponibles.
+          Veuillez ajouter la clé de service dans le fichier .env (SUPABASE_SERVICE_KEY).
+        </Alert>
+      )}
       
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs value={tabValue} onChange={handleTabChange} aria-label="admin tabs">
@@ -300,7 +366,10 @@ const AdminPanel: React.FC = () => {
                         
                         <Tooltip title="Supprimer">
                           <span>
-                            <IconButton disabled>
+                            <IconButton 
+                              onClick={() => handleDeleteUser(user.id)}
+                              disabled={user.id === currentUser?.id || isLoading}
+                            >
                               <DeleteIcon />
                             </IconButton>
                           </span>
@@ -315,7 +384,7 @@ const AdminPanel: React.FC = () => {
         )}
         
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          Note: La gestion complète des utilisateurs nécessite des droits d'administration Supabase.
+          Note: Vous ne pouvez pas supprimer votre propre compte.
         </Typography>
       </TabPanel>
     </Box>
