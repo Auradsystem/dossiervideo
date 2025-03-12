@@ -4,9 +4,19 @@ import { User as AppUser } from '../types/User';
 // Configuration Supabase
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://kvoezelnkzfvyikicjyr.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2b2V6ZWxua3pmdnlpa2ljanlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE4MDkwMzIsImV4cCI6MjA1NzM4NTAzMn0.Hf3ohn_zlFRQG8kAiVm58Ng4EGkV2HLTXlpwkkp_CiM';
+const SUPABASE_SERVICE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
 
 // Créer le client Supabase avec la clé anonyme pour l'accès client
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Créer le client Supabase avec la clé de service pour l'accès admin
+export const getServiceSupabase = () => {
+  if (!SUPABASE_SERVICE_KEY) {
+    console.error('La clé de service Supabase n\'est pas définie');
+    return null;
+  }
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+};
 
 // Interface pour les métadonnées utilisateur dans Supabase
 interface UserMetadata {
