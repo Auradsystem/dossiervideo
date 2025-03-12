@@ -60,7 +60,7 @@ interface AppContextType {
   currentUser: User | null;
   isAdmin: boolean;
   users: User[];
-  addUser: (username: string, password: string, isAdmin: boolean) => void;
+  addUser: (username: string, password: string, isAdmin: boolean) => User;
   updateUser: (id: string, updates: Partial<User>) => void;
   deleteUser: (id: string) => void;
   isAdminMode: boolean;
@@ -161,10 +161,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Fonction pour sauvegarder les utilisateurs dans le localStorage
   const saveUsers = useCallback((updatedUsers: User[]) => {
     if (updatedUsers.length > 0) {
-      const serialized = serializeWithDates(updatedUsers);
-      const success = safeLocalStorage.setItem('plancam_users', serialized);
-      console.log('Utilisateurs sauvegardés dans localStorage:', { success, count: updatedUsers.length });
-      return success;
+      try {
+        const serialized = serializeWithDates(updatedUsers);
+        const success = safeLocalStorage.setItem('plancam_users', serialized);
+        console.log('Utilisateurs sauvegardés dans localStorage:', { 
+          success, 
+          count: updatedUsers.length,
+          usersList: updatedUsers.map(u => u.username)
+        });
+        return success;
+      } catch (error) {
+        console.error('Erreur lors de la sérialisation des utilisateurs:', error);
+        return false;
+      }
     }
     return false;
   }, []);
@@ -257,7 +266,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Sauvegarder les utilisateurs dans le localStorage à chaque modification
   useEffect(() => {
-    saveUsers(users);
+    if (users.length > 0) {
+      saveUsers(users);
+    }
   }, [users, saveUsers]);
 
   const login = (username: string, password: string): boolean => {
@@ -314,31 +325,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // Fonctions de gestion des utilisateurs
-  const addUser = (username: string, password: string, isAdmin: boolean) => {
-    const newUser: User = {
-      id: uuidv4(),
-      username,
-      password,
-      isAdmin,
-      createdAt: new Date()
-    };
-    
-    // Mettre à jour l'état des utilisateurs
-    const updatedUsers = [...users, newUser];
-    setUsers(updatedUsers);
-    
-    // Sauvegarder immédiatement dans localStorage
-    const saved = saveUsers(updatedUsers);
-    
-    console.log('Nouvel utilisateur ajouté:', { user: newUser, saved, totalUsers: updatedUsers.length });
-    
-    // Vérifier si la sauvegarde a réussi
-    if (!saved) {
-      console.error('Échec de la sauvegarde du nouvel utilisateur dans localStorage');
-      // Essayer une autre approche de sauvegarde si nécessaire
+  const addUser = (username: string, password: string, isAdmin: boolean): User => {
+    try {
+      // Créer le nouvel utilisateur
+      const newUser: User = {
+        id: uuidv4(),
+        username,
+        password,
+        isAdmin,
+        createdAt: new Date()
+      };
+      
+      console.log('Création d\'un nouvel utilisateur:', { 
+        username: newUser.username, 
+        isAdmin: newUser.isAdmin,
+        id: newUser.id
+      });
+      
+      // Mettre à jour l'état des utilisateurs avec le nouvel utilisateur
+      const updatedUsers = [...users, newUser];
+      
+      // Mettre à jour l'état immédiatement (important pour la vérification)
+      setUsers(updatedUsers);
+      
+      // Sauvegarder immédiatement dans localStorage
+      const saved = saveUsers(updatedUsers);
+      
+      console.log('Résultat de l\'ajout d\'utilisateur:', { 
+        saved, 
+        totalUsers: updatedUsers.length,
+        usersList: updatedUsers.map(u => u.username)
+      });
+      
+      // Vérifier si la sauvegarde a réussi
+      if (!saved) {
+        console.error('Échec de la sauvegarde du nouvel utilisateur dans localStorage');
+        // Essayer une autre approche de sauvegarde si nécessaire
+      }
+      
+      return newUser;
+    } catch (error) {
+      console.error('Erreur lors de l\'ajout d\'un utilisateur:', error);
+      throw new Error('Erreur lors de l\'ajout d\'un utilisateur');
     }
-    
-    return newUser;
   };
 
   const updateUser = (id: string, updates: Partial<User>) => {

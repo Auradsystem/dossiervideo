@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Box, 
   Typography, 
@@ -51,6 +51,9 @@ const AdminPanel: React.FC = () => {
   const [isUserAdmin, setIsUserAdmin] = useState(false);
   const [error, setError] = useState('');
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  
+  // Référence pour stocker le nom d'utilisateur en cours d'ajout
+  const pendingUsernameRef = useRef<string | null>(null);
 
   // Vérifier si l'utilisateur est administrateur
   useEffect(() => {
@@ -66,6 +69,39 @@ const AdminPanel: React.FC = () => {
   // Ajouter un log pour vérifier les utilisateurs au chargement
   useEffect(() => {
     console.log('AdminPanel - Liste des utilisateurs chargée:', users);
+  }, [users]);
+
+  // Effet pour vérifier si un utilisateur en attente a été ajouté
+  useEffect(() => {
+    // Si nous avons un nom d'utilisateur en attente, vérifions s'il a été ajouté
+    if (pendingUsernameRef.current) {
+      const pendingUsername = pendingUsernameRef.current;
+      const userAdded = users.some(u => u.username.toLowerCase() === pendingUsername.toLowerCase());
+      
+      console.log('AdminPanel - Vérification après ajout:', { 
+        pendingUsername, 
+        userAdded, 
+        usersCount: users.length,
+        usersList: users.map(u => u.username)
+      });
+      
+      if (userAdded) {
+        setSnackbar({
+          open: true,
+          message: 'Utilisateur ajouté avec succès',
+          severity: 'success'
+        });
+      } else {
+        setSnackbar({
+          open: true,
+          message: 'Problème lors de l\'ajout de l\'utilisateur',
+          severity: 'error'
+        });
+      }
+      
+      // Réinitialiser la référence
+      pendingUsernameRef.current = null;
+    }
   }, [users]);
 
   const handleOpenAddDialog = () => {
@@ -141,29 +177,17 @@ const AdminPanel: React.FC = () => {
 
     try {
       if (dialogMode === 'add') {
+        // Stocker le nom d'utilisateur en cours d'ajout pour vérification ultérieure
+        pendingUsernameRef.current = username;
+        
         // Ajouter un nouvel utilisateur
         console.log('AdminPanel - Tentative d\'ajout d\'utilisateur:', { username, isAdmin: isUserAdmin });
-        addUser(username, password, isUserAdmin);
+        const newUser = addUser(username, password, isUserAdmin);
         
-        // Vérifier si l'utilisateur a bien été ajouté
-        setTimeout(() => {
-          const userAdded = users.some(u => u.username.toLowerCase() === username.toLowerCase());
-          console.log('AdminPanel - Vérification après ajout:', { userAdded, usersCount: users.length });
-          
-          if (userAdded) {
-            setSnackbar({
-              open: true,
-              message: 'Utilisateur ajouté avec succès',
-              severity: 'success'
-            });
-          } else {
-            setSnackbar({
-              open: true,
-              message: 'Problème lors de l\'ajout de l\'utilisateur',
-              severity: 'error'
-            });
-          }
-        }, 100);
+        console.log('AdminPanel - Résultat de l\'ajout:', { 
+          newUser, 
+          usersCount: users.length + 1 // +1 car l'état users n'est pas encore mis à jour
+        });
       } else if (selectedUser) {
         // Mettre à jour un utilisateur existant
         const updates: Partial<User> = {
