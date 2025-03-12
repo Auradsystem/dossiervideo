@@ -1,431 +1,422 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Group } from 'react-konva';
-import { Box, CircularProgress, Typography, IconButton, Paper, useMediaQuery, useTheme } from '@mui/material';
-import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Box, Paper, Typography, IconButton, Slider, Button } from '@mui/material';
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Trash2, MessageSquare } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
+import { Stage, Layer } from 'react-konva';
 import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
 import CommentObject from './CommentObject';
 import CommentForm from './CommentForm';
 
-// Workaround for PDF.js worker
+// Set up PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const PdfViewer: React.FC = () => {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
-  
-  const {
-    pdfFile,
-    cameras,
-    addCamera,
-    selectedCamera,
-    setSelectedCamera,
-    scale,
+  const { 
+    pdfFile, 
+    cameras, 
+    addCamera, 
+    scale, 
     setScale,
     page,
     setPage,
     totalPages,
     setTotalPages,
+    clearCurrentPage,
     comments,
-    addComment,
+    isAddingComment,
+    setIsAddingComment,
     selectedComment,
     setSelectedComment,
-    isAddingComment,
-    setIsAddingComment
+    deleteComment
   } = useAppContext();
-
-  const [pdfImage, setPdfImage] = useState<HTMLImageElement | null>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  
+  const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pdfPageRendered, setPdfPageRendered] = useState<HTMLCanvasElement | null>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [commentPosition, setCommentPosition] = useState<{ x: number, y: number } | null>(null);
-
-  const stageRef = useRef<any>(null);
+  const [commentFormOpen, setCommentFormOpen] = useState<boolean>(false);
+  
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<any>(null);
 
-  // Fonction pour redimensionner le stage en fonction de la taille du conteneur
-  const resizeStage = () => {
-    if (containerRef.current) {
-      const containerWidth = containerRef.current.offsetWidth;
-      const containerHeight = containerRef.current.offsetHeight;
-      
-      // Ajuster les dimensions du stage
-      if (pdfImage) {
-        const imgWidth = pdfImage.width * scale;
-        const imgHeight = pdfImage.height * scale;
-        
-        // Calculer les dimensions pour que l'image s'adapte au conteneur
-        const newWidth = Math.min(containerWidth, imgWidth);
-        const newHeight = Math.min(containerHeight, imgHeight);
-        
-        setDimensions({
-          width: newWidth,
-          height: newHeight
-        });
-      } else {
-        setDimensions({
-          width: containerWidth,
-          height: containerHeight
-        });
-      }
-    }
-  };
-
-  // Effet pour redimensionner le stage lors du chargement et du redimensionnement de la fenêtre
+  // Load PDF document when file changes
   useEffect(() => {
-    resizeStage();
-    window.addEventListener('resize', resizeStage);
-    
-    return () => {
-      window.removeEventListener('resize', resizeStage);
-    };
-  }, [pdfImage, scale]);
-
-  // Effet pour charger le PDF lorsque le fichier change
-  useEffect(() => {
-    if (pdfFile) {
-      loadPdf();
-    }
-  }, [pdfFile, page]);
-
-  // Fonction pour charger le PDF
-  const loadPdf = async () => {
     if (!pdfFile) return;
 
-    setLoading(true);
-    setError(null);
+    const loadPdf = async () => {
+      try {
+        setIsLoading(true);
+        console.log('Chargement du PDF...');
+        const fileArrayBuffer = await pdfFile.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: fileArrayBuffer }).promise;
+        setPdfDocument(pdf);
+        setTotalPages(pdf.numPages);
+        setPage(1);
+        console.log(`PDF chargé avec ${pdf.numPages} pages`);
+      } catch (error) {
+        console.error('Error loading PDF:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-    try {
-      const fileReader = new FileReader();
-      
-      fileReader.onload = async function() {
-        try {
-          const typedArray = new Uint8Array(this.result as ArrayBuffer);
-          const loadingTask = pdfjsLib.getDocument(typedArray);
-          const pdf = await loadingTask.promise;
-          
-          setTotalPages(pdf.numPages);
-          
-          // Vérifier que la page demandée est valide
-          const currentPage = Math.min(Math.max(1, page), pdf.numPages);
-          if (currentPage !== page) {
-            setPage(currentPage);
-          }
-          
-          const pdfPage = await pdf.getPage(currentPage);
-          const viewport = pdfPage.getViewport({ scale: 1.5 });
-          
-          // Créer un canvas pour le rendu du PDF
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          
-          if (!context) {
-            throw new Error('Impossible de créer un contexte 2D');
-          }
-          
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          
-          // Rendre la page PDF sur le canvas
-          await pdfPage.render({
-            canvasContext: context,
-            viewport: viewport
-          }).promise;
-          
-          // Convertir le canvas en image
-          const image = new Image();
-          image.src = canvas.toDataURL();
-          
-          image.onload = () => {
-            setPdfImage(image);
-            resizeStage();
-            setLoading(false);
-          };
-          
-        } catch (err) {
-          console.error('Erreur lors du chargement du PDF:', err);
-          setError('Erreur lors du chargement du PDF. Veuillez réessayer.');
-          setLoading(false);
-        }
-      };
-      
-      fileReader.onerror = () => {
-        setError('Erreur lors de la lecture du fichier. Veuillez réessayer.');
-        setLoading(false);
-      };
-      
-      fileReader.readAsArrayBuffer(pdfFile);
-      
-    } catch (err) {
-      console.error('Erreur lors du chargement du PDF:', err);
-      setError('Erreur lors du chargement du PDF. Veuillez réessayer.');
-      setLoading(false);
+    loadPdf();
+  }, [pdfFile, setTotalPages, setPage]);
+
+  // Render PDF page when page or scale changes
+  useEffect(() => {
+    if (!pdfDocument) return;
+
+    const renderPage = async () => {
+      try {
+        setIsLoading(true);
+        console.log(`Rendu de la page ${page} avec échelle ${scale}`);
+        const pdfPage = await pdfDocument.getPage(page);
+        const viewport = pdfPage.getViewport({ scale });
+        
+        if (!canvasRef.current) return;
+        
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d');
+        
+        if (!context) return;
+        
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await pdfPage.render({
+          canvasContext: context,
+          viewport,
+        }).promise;
+        
+        setPdfPageRendered(canvas);
+        setStageSize({
+          width: viewport.width,
+          height: viewport.height
+        });
+        console.log(`Page ${page} rendue avec succès`);
+      } catch (error) {
+        console.error(`Erreur lors du rendu de la page ${page}:`, error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    renderPage();
+  }, [pdfDocument, page, scale]);
+
+  // Update container size on resize
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        setStageSize(prev => ({
+          ...prev,
+          containerWidth: width,
+          containerHeight: height
+        }));
+      }
+    };
+
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  const handleZoomIn = () => {
+    setScale(prev => Math.min(prev + 0.1, 3));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prev => Math.max(prev - 0.1, 0.5));
+  };
+
+  const handlePrevPage = () => {
+    if (page > 1) {
+      console.log(`Navigation vers la page ${page - 1}`);
+      setPage(page - 1);
     }
   };
 
-  // Fonction pour gérer le clic sur le stage
+  const handleNextPage = () => {
+    if (page < totalPages) {
+      console.log(`Navigation vers la page ${page + 1}`);
+      setPage(page + 1);
+    }
+  };
+
   const handleStageClick = (e: any) => {
-    // Obtenir la position du clic
+    // Récupérer la cible du clic
+    const clickTarget = e.target;
     const stage = e.target.getStage();
     const pointerPosition = stage.getPointerPosition();
     
     // Si on est en mode ajout de commentaire
-    if (isAddingComment) {
-      setCommentPosition({
-        x: pointerPosition.x,
-        y: pointerPosition.y
-      });
+    if (isAddingComment && pointerPosition) {
+      console.log(`Ajout d'un commentaire à la position (${pointerPosition.x}, ${pointerPosition.y})`);
+      setCommentPosition(pointerPosition);
+      setCommentFormOpen(true);
       return;
     }
     
-    // Si on a cliqué sur le fond (et non sur une caméra ou un commentaire)
-    if (e.target === e.currentTarget) {
-      // Désélectionner la caméra et le commentaire actuels
-      setSelectedCamera(null);
-      setSelectedComment(null);
-      
-      // Si double-clic, ajouter une caméra
-      if (e.evt.detail === 2 && pdfImage) {
+    // Si on clique directement sur le stage (pas sur une caméra ou un commentaire)
+    if (clickTarget === stage) {
+      if (pointerPosition) {
+        console.log(`Ajout d'une caméra à la position (${pointerPosition.x}, ${pointerPosition.y}) sur la page ${page}`);
         addCamera(pointerPosition.x, pointerPosition.y, 'dome');
+      }
+      // Désélectionner le commentaire
+      if (selectedComment) {
+        setSelectedComment(null);
       }
     }
   };
 
-  // Fonction pour zoomer
-  const handleZoom = (direction: 'in' | 'out') => {
-    const factor = direction === 'in' ? 1.2 : 0.8;
-    setScale(Math.min(Math.max(0.5, scale * factor), 3));
-  };
-
-  // Fonction pour réinitialiser le zoom
-  const handleResetZoom = () => {
-    setScale(1);
-  };
-
-  // Fonction pour changer de page
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setPage(newPage);
+  const handleClearPage = () => {
+    if (window.confirm(`Êtes-vous sûr de vouloir supprimer toutes les caméras et commentaires de la page ${page} ?`)) {
+      console.log(`Suppression de toutes les caméras et commentaires de la page ${page}`);
+      clearCurrentPage();
     }
   };
 
-  // Fonction pour annuler l'ajout de commentaire
-  const handleCancelComment = () => {
-    setIsAddingComment(false);
-    setCommentPosition(null);
+  const handleAddComment = () => {
+    setIsAddingComment(true);
   };
 
-  // Fonction pour soumettre un commentaire
-  const handleSubmitComment = (text: string) => {
-    if (commentPosition && text.trim()) {
-      addComment(commentPosition.x, commentPosition.y, text);
-      setCommentPosition(null);
+  const handleDeleteComment = () => {
+    if (selectedComment && window.confirm('Êtes-vous sûr de vouloir supprimer ce commentaire ?')) {
+      deleteComment(selectedComment);
+    }
+  };
+
+  const handleEditComment = () => {
+    if (selectedComment) {
+      setCommentFormOpen(true);
     }
   };
 
   return (
     <Box 
-      ref={containerRef} 
       sx={{ 
-        width: '100%', 
-        height: '100%', 
-        position: 'relative',
-        overflow: 'auto',
-        display: 'flex',
-        flexDirection: 'column'
+        display: 'flex', 
+        flexDirection: 'column', 
+        height: '100%',
+        position: 'relative'
       }}
     >
-      {/* Contrôles de navigation */}
-      <Paper 
-        elevation={2} 
-        sx={{ 
-          p: 1, 
-          mb: 1, 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 1
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <IconButton 
-            onClick={() => handlePageChange(page - 1)} 
-            disabled={page <= 1 || loading}
-            size={isSmallScreen ? 'small' : 'medium'}
-          >
-            <RotateCcw size={isSmallScreen ? 16 : 20} style={{ transform: 'rotate(90deg)' }} />
-          </IconButton>
-          
-          <Typography variant="body2">
-            Page {page} / {totalPages || 1}
-          </Typography>
-          
-          <IconButton 
-            onClick={() => handlePageChange(page + 1)} 
-            disabled={page >= totalPages || loading}
-            size={isSmallScreen ? 'small' : 'medium'}
-          >
-            <RotateCcw size={isSmallScreen ? 16 : 20} style={{ transform: 'rotate(-90deg)' }} />
-          </IconButton>
-        </Box>
-        
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <IconButton 
-            onClick={() => handleZoom('out')} 
-            disabled={loading}
-            size={isSmallScreen ? 'small' : 'medium'}
-          >
-            <ZoomOut size={isSmallScreen ? 16 : 20} />
-          </IconButton>
-          
-          <Typography variant="body2" sx={{ minWidth: isSmallScreen ? 40 : 60, textAlign: 'center' }}>
-            {Math.round(scale * 100)}%
-          </Typography>
-          
-          <IconButton 
-            onClick={() => handleZoom('in')} 
-            disabled={loading}
-            size={isSmallScreen ? 'small' : 'medium'}
-          >
-            <ZoomIn size={isSmallScreen ? 16 : 20} />
-          </IconButton>
-          
-          <IconButton 
-            onClick={handleResetZoom} 
-            disabled={loading}
-            size={isSmallScreen ? 'small' : 'medium'}
-          >
-            <RotateCcw size={isSmallScreen ? 16 : 20} />
-          </IconButton>
-        </Box>
-      </Paper>
-      
-      {/* Conteneur du stage */}
-      <Box sx={{ 
-        flexGrow: 1, 
-        position: 'relative',
-        overflow: 'auto',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        bgcolor: 'grey.100'
-      }}>
-        {loading && (
-          <Box sx={{ 
-            position: 'absolute', 
-            top: '50%', 
-            left: '50%', 
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 2
-          }}>
-            <CircularProgress />
-            <Typography variant="body2">Chargement du PDF...</Typography>
-          </Box>
-        )}
-        
-        {error && (
-          <Box sx={{ 
-            position: 'absolute', 
-            top: '50%', 
-            left: '50%', 
-            transform: 'translate(-50%, -50%)',
-            textAlign: 'center',
-            maxWidth: '80%'
-          }}>
-            <Typography variant="body1" color="error">
-              {error}
+      {!pdfFile ? (
+        <Paper 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            flexGrow: 1,
+            bgcolor: 'background.default',
+            p: 4
+          }}
+        >
+          <Box sx={{ textAlign: 'center' }}>
+            <img 
+              src="https://images.unsplash.com/photo-1586281380349-632531db7ed4?ixlib=rb-1.2.1&auto=format&fit=crop&w=300&q=80" 
+              alt="Blueprint" 
+              style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px', borderRadius: '8px' }}
+            />
+            <Typography variant="h5" gutterBottom>
+              Aucun plan chargé
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Utilisez le bouton "Charger PDF" pour importer un plan
             </Typography>
           </Box>
-        )}
-        
-        {!pdfFile && !loading && !error && (
-          <Box sx={{ 
-            position: 'absolute', 
-            top: '50%', 
-            left: '50%', 
-            transform: 'translate(-50%, -50%)',
-            textAlign: 'center',
-            maxWidth: '80%'
-          }}>
-            <Typography variant="body1">
-              Veuillez charger un fichier PDF pour commencer.
-            </Typography>
-          </Box>
-        )}
-        
-        {pdfImage && !loading && (
-          <Stage
-            width={dimensions.width}
-            height={dimensions.height}
-            ref={stageRef}
-            onClick={handleStageClick}
-            style={{ 
-              cursor: isAddingComment ? 'crosshair' : 'default',
-              boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+        </Paper>
+      ) : (
+        <>
+          <Box 
+            ref={containerRef}
+            sx={{ 
+              flexGrow: 1, 
+              overflow: 'auto',
+              position: 'relative',
+              bgcolor: '#e0e0e0'
             }}
           >
-            <Layer>
-              <KonvaImage
-                image={pdfImage}
-                width={pdfImage.width * scale}
-                height={pdfImage.height * scale}
-                x={(dimensions.width - pdfImage.width * scale) / 2}
-                y={(dimensions.height - pdfImage.height * scale) / 2}
+            {isLoading && (
+              <Box 
+                sx={{ 
+                  position: 'absolute', 
+                  top: 0, 
+                  left: 0, 
+                  right: 0, 
+                  bottom: 0, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  bgcolor: 'rgba(255, 255, 255, 0.7)',
+                  zIndex: 10
+                }}
+              >
+                <Typography variant="h6">Chargement...</Typography>
+              </Box>
+            )}
+            <Box 
+              sx={{ 
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '100%',
+                p: 2
+              }}
+            >
+              <Box sx={{ position: 'relative' }}>
+                <canvas ref={canvasRef} style={{ display: 'block' }} />
+                {pdfPageRendered && (
+                  <Stage 
+                    ref={stageRef}
+                    width={stageSize.width} 
+                    height={stageSize.height}
+                    style={{ 
+                      position: 'absolute', 
+                      top: 0, 
+                      left: 0,
+                      pointerEvents: 'auto',
+                      cursor: isAddingComment ? 'crosshair' : 'default'
+                    }}
+                    onClick={handleStageClick}
+                    className="konvajs-content"
+                  >
+                    <Layer>
+                      {cameras.map(camera => (
+                        <CameraObject 
+                          key={camera.id} 
+                          camera={camera} 
+                        />
+                      ))}
+                      {comments.map(comment => (
+                        <CommentObject
+                          key={comment.id}
+                          comment={comment}
+                        />
+                      ))}
+                    </Layer>
+                  </Stage>
+                )}
+              </Box>
+            </Box>
+          </Box>
+          
+          <Paper 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              p: 1, 
+              borderTop: 1, 
+              borderColor: 'divider',
+              gap: 2
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <IconButton onClick={handleZoomOut} size="small">
+                <ZoomOut size={20} />
+              </IconButton>
+              <Slider
+                value={scale}
+                min={0.5}
+                max={3}
+                step={0.1}
+                onChange={(_, value) => setScale(value as number)}
+                sx={{ width: 100, mx: 1 }}
               />
-              
-              {/* Groupe pour les caméras */}
-              <Group
-                x={(dimensions.width - pdfImage.width * scale) / 2}
-                y={(dimensions.height - pdfImage.height * scale) / 2}
+              <IconButton onClick={handleZoomIn} size="small">
+                <ZoomIn size={20} />
+              </IconButton>
+              <Typography variant="body2" sx={{ ml: 1 }}>
+                {Math.round(scale * 100)}%
+              </Typography>
+            </Box>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
+              <Button
+                startIcon={<MessageSquare size={16} />}
+                color="primary"
+                variant={isAddingComment ? "contained" : "outlined"}
+                size="small"
+                onClick={handleAddComment}
+                sx={{ mr: 1 }}
               >
-                {cameras.map((camera) => (
-                  <CameraObject
-                    key={camera.id}
-                    camera={camera}
-                    isSelected={camera.id === selectedCamera}
-                    scale={scale}
-                  />
-                ))}
-              </Group>
+                {isAddingComment ? "Placer commentaire" : "Ajouter commentaire"}
+              </Button>
               
-              {/* Groupe pour les commentaires */}
-              <Group
-                x={(dimensions.width - pdfImage.width * scale) / 2}
-                y={(dimensions.height - pdfImage.height * scale) / 2}
+              {selectedComment && (
+                <>
+                  <Button
+                    color="primary"
+                    variant="outlined"
+                    size="small"
+                    onClick={handleEditComment}
+                    sx={{ mr: 1 }}
+                  >
+                    Modifier
+                  </Button>
+                  <Button
+                    color="error"
+                    variant="outlined"
+                    size="small"
+                    onClick={handleDeleteComment}
+                    sx={{ mr: 1 }}
+                  >
+                    Supprimer
+                  </Button>
+                </>
+              )}
+            </Box>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', ml: 'auto' }}>
+              <Button
+                startIcon={<Trash2 size={16} />}
+                color="error"
+                variant="outlined"
+                size="small"
+                onClick={handleClearPage}
+                sx={{ mr: 2 }}
+                disabled={cameras.length === 0 && comments.length === 0}
               >
-                {comments.map((comment) => (
-                  <CommentObject
-                    key={comment.id}
-                    comment={comment}
-                    isSelected={comment.id === selectedComment}
-                    scale={scale}
-                  />
-                ))}
-              </Group>
-            </Layer>
-          </Stage>
-        )}
-        
-        {/* Formulaire de commentaire */}
-        {commentPosition && (
+                Effacer la page
+              </Button>
+              
+              <IconButton 
+                onClick={handlePrevPage} 
+                disabled={page <= 1}
+                size="small"
+              >
+                <ChevronLeft size={20} />
+              </IconButton>
+              <Typography variant="body2" sx={{ mx: 1 }}>
+                Page {page} / {totalPages}
+              </Typography>
+              <IconButton 
+                onClick={handleNextPage} 
+                disabled={page >= totalPages}
+                size="small"
+              >
+                <ChevronRight size={20} />
+              </IconButton>
+            </Box>
+          </Paper>
+          
+          {/* Formulaire d'ajout/modification de commentaire */}
           <CommentForm
-            position={commentPosition}
-            onSubmit={handleSubmitComment}
-            onCancel={handleCancelComment}
-            stageOffset={{
-              x: (dimensions.width - (pdfImage?.width || 0) * scale) / 2,
-              y: (dimensions.height - (pdfImage?.height || 0) * scale) / 2
+            open={commentFormOpen}
+            onClose={() => {
+              setCommentFormOpen(false);
+              setIsAddingComment(false);
             }}
+            position={commentPosition}
           />
-        )}
-      </Box>
+        </>
+      )}
     </Box>
   );
 };

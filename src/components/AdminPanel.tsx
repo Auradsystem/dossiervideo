@@ -195,9 +195,18 @@ const AdminPanel: React.FC = () => {
   };
 
   // Formater la date pour l'affichage
-  const formatDate = (date: Date | undefined) => {
+  const formatDate = (date: Date | undefined | string) => {
     if (!date) return 'Jamais';
-    return new Date(date).toLocaleString('fr-FR');
+    
+    // Si la date est une chaîne, la convertir en objet Date
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    
+    // Vérifier si la date est valide
+    if (isNaN(dateObj.getTime())) {
+      return 'Date invalide';
+    }
+    
+    return dateObj.toLocaleString('fr-FR');
   };
 
   if (!isAdmin) {

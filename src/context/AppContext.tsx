@@ -69,6 +69,46 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+// Fonction utilitaire pour gérer localStorage de manière sécurisée
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch (error) {
+      console.error('Erreur lors de la lecture du localStorage:', error);
+      return null;
+    }
+  },
+  setItem: (key: string, value: string): boolean => {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      console.error('Erreur lors de l\'écriture dans le localStorage:', error);
+      return false;
+    }
+  },
+  removeItem: (key: string): boolean => {
+    try {
+      localStorage.removeItem(key);
+      return true;
+    } catch (error) {
+      console.error('Erreur lors de la suppression du localStorage:', error);
+      return false;
+    }
+  }
+};
+
+// Fonction pour convertir les dates en chaînes et vice-versa
+const dateReviver = (key: string, value: any) => {
+  // Vérifier si la valeur ressemble à une date ISO
+  const dateFormat = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z$/;
+  if (typeof value === 'string' && dateFormat.test(value)) {
+    return new Date(value);
+  }
+  return value;
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   // Stockage des caméras par page
@@ -104,10 +144,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Initialisation des utilisateurs
   useEffect(() => {
     // Récupérer les utilisateurs du localStorage
-    const storedUsers = localStorage.getItem('plancam_users');
+    const storedUsers = safeLocalStorage.getItem('plancam_users');
     if (storedUsers) {
       try {
-        const parsedUsers = JSON.parse(storedUsers);
+        // Utiliser le reviver pour gérer correctement les dates
+        const parsedUsers = JSON.parse(storedUsers, dateReviver);
         setUsers(parsedUsers);
       } catch (error) {
         console.error('Erreur lors de la récupération des utilisateurs:', error);
@@ -135,7 +176,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       const initialUsers = [adminUser, defaultUser];
       setUsers(initialUsers);
-      localStorage.setItem('plancam_users', JSON.stringify(initialUsers));
+      safeLocalStorage.setItem('plancam_users', JSON.stringify(initialUsers));
     }
   }, []);
 
@@ -154,16 +195,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Check for existing authentication on mount
   useEffect(() => {
-    const auth = localStorage.getItem('plancam_auth');
+    const auth = safeLocalStorage.getItem('plancam_auth');
     if (auth) {
       try {
-        const authData = JSON.parse(auth);
+        // Utiliser le reviver pour gérer correctement les dates
+        const authData = JSON.parse(auth, dateReviver);
         setIsAuthenticated(true);
         setCurrentUser(authData.user);
         setIsAdmin(authData.user.isAdmin);
       } catch (error) {
         console.error('Erreur lors de la récupération de l\'authentification:', error);
-        localStorage.removeItem('plancam_auth');
+        safeLocalStorage.removeItem('plancam_auth');
       }
     }
   }, []);
@@ -180,7 +222,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Sauvegarder les utilisateurs dans le localStorage à chaque modification
   useEffect(() => {
     if (users.length > 0) {
-      localStorage.setItem('plancam_users', JSON.stringify(users));
+      safeLocalStorage.setItem('plancam_users', JSON.stringify(users));
     }
   }, [users]);
 
@@ -207,9 +249,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsAdmin(updatedUser.isAdmin);
       
       // Stocker l'authentification dans le localStorage
-      localStorage.setItem('plancam_auth', JSON.stringify({
+      const authSuccess = safeLocalStorage.setItem('plancam_auth', JSON.stringify({
         user: updatedUser
       }));
+      
+      // Même si localStorage échoue, l'authentification en mémoire fonctionne
+      if (!authSuccess) {
+        console.warn('Impossible de stocker l\'authentification dans localStorage, mais la session est active en mémoire');
+      }
       
       return true;
     }
@@ -222,7 +269,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCurrentUser(null);
     setIsAdmin(false);
     setIsAdminMode(false);
-    localStorage.removeItem('plancam_auth');
+    safeLocalStorage.removeItem('plancam_auth');
   };
 
   // Fonctions de gestion des utilisateurs
@@ -253,7 +300,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsAdmin(updatedCurrentUser.isAdmin);
       
       // Mettre à jour le localStorage
-      localStorage.setItem('plancam_auth', JSON.stringify({
+      safeLocalStorage.setItem('plancam_auth', JSON.stringify({
         user: updatedCurrentUser
       }));
     }

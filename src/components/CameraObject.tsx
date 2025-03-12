@@ -5,31 +5,29 @@ import { useAppContext } from '../context/AppContext';
 
 interface CameraObjectProps {
   camera: Camera;
-  isSelected?: boolean;
-  scale?: number;
 }
 
-const CameraObject: React.FC<CameraObjectProps> = ({ camera, isSelected, scale = 1 }) => {
+const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
   const { 
     selectedCamera, 
     setSelectedCamera, 
     updateCamera 
   } = useAppContext();
   
-  const isSelectedState = isSelected !== undefined ? isSelected : selectedCamera === camera.id;
+  const isSelected = selectedCamera === camera.id;
   const transformerRef = React.useRef<any>(null);
   const groupRef = React.useRef<any>(null);
   const wedgeRef = React.useRef<any>(null);
   
   React.useEffect(() => {
-    if (isSelectedState && transformerRef.current && groupRef.current) {
+    if (isSelected && transformerRef.current && groupRef.current) {
       transformerRef.current.nodes([groupRef.current]);
       transformerRef.current.getLayer().batchDraw();
     }
-  }, [isSelectedState]);
+  }, [isSelected]);
 
   const getCameraIcon = () => {
-    const iconScale = camera.width / 24; // Scale factor based on camera width
+    const scale = camera.width / 24; // Scale factor based on camera width
     
     // Utiliser l'icône personnalisée si disponible
     if (camera.iconPath) {
@@ -37,8 +35,8 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera, isSelected, scale =
         <Path
           data={camera.iconPath}
           fill="#ffffff"
-          scaleX={iconScale}
-          scaleY={iconScale}
+          scaleX={scale}
+          scaleY={scale}
           offsetX={12}
           offsetY={12}
         />
@@ -60,8 +58,8 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera, isSelected, scale =
         <Path
           data={iconData.path}
           fill="#ffffff"
-          scaleX={iconScale}
-          scaleY={iconScale}
+          scaleX={scale}
+          scaleY={scale}
           offsetX={12}
           offsetY={12}
         />
@@ -131,7 +129,7 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera, isSelected, scale =
           strokeWidth={1}
           rotation={camera.rotation || -camera.angle / 2}
           opacity={camera.opacity}
-          draggable={isSelectedState}
+          draggable={isSelected}
           onDragEnd={handleRotate}
         />
         
@@ -150,7 +148,7 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera, isSelected, scale =
         />
       </Group>
       
-      {isSelectedState && (
+      {isSelected && (
         <Transformer
           ref={transformerRef}
           boundBoxFunc={(oldBox, newBox) => {
