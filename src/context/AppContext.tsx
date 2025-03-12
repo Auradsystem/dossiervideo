@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
 import { Comment } from '../types/Comment';
 import { User } from '../types/User';
-import { supabase, supabaseAuth, initializeDefaultUsers, getServiceSupabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 // Interface pour stocker les caméras par page
 interface PageCameras {
@@ -141,16 +141,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const initApp = async () => {
       try {
         // Vérifier s'il y a une session active
-        const { session, user, error } = await supabaseAuth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (session && user) {
+        if (session) {
+          const { user } = session;
           setIsAuthenticated(true);
-          setCurrentUser(user);
-          setIsAdmin(user.isAdmin);
+          setCurrentUser({
+            id: user.id,
+            email: user.email || '',
+            isAdmin: user.app_metadata?.is_admin || false
+          });
+          setIsAdmin(user.app_metadata?.is_admin || false);
           console.log('Session restaurée:', user);
-        } else {
-          // Initialiser les utilisateurs par défaut si nécessaire
-          await initializeDefaultUsers();
         }
       } catch (error) {
         console.error('Erreur lors de l\'initialisation de l\'application:', error);
@@ -165,15 +167,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.log('Événement d\'authentification:', event);
         
         if (event === 'SIGNED_IN' && session) {
-          // Récupérer les informations utilisateur complètes
-          const { user, error } = await supabaseAuth.getSession();
-          
-          if (user && !error) {
-            setIsAuthenticated(true);
-            setCurrentUser(user);
-            setIsAdmin(user.isAdmin);
-            console.log('Utilisateur connecté:', user);
-          }
+          const { user } = session;
+          setIsAuthenticated(true);
+          setCurrentUser({
+            id: user.id,
+            email: user.email || '',
+            isAdmin: user.app_metadata?.is_admin || false
+          });
+          setIsAdmin(user.app_metadata?.is_admin || false);
+          console.log('Utilisateur connecté:', user);
         } else if (event === 'SIGNED_OUT') {
           setIsAuthenticated(false);
           setCurrentUser(null);
@@ -217,14 +219,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsSyncing(true);
       
       // Connexion via Supabase
-      const { user, error } = await supabaseAuth.signIn(email, password);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
       
       if (error) {
         console.error('Erreur de connexion:', error);
         return false;
       }
       
-      if (user) {
+      if (data.user) {
         // L'authentification est gérée par l'écouteur onAuthStateChange
         console.log('Connexion réussie');
         return true;
@@ -244,7 +249,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsSyncing(true);
       
       // Déconnexion de Supabase
-      await supabaseAuth.signOut();
+      await supabase.auth.signOut();
       
       // La déconnexion est gérée par l'écouteur onAuthStateChange
     } catch (error) {
@@ -260,14 +265,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsSyncing(true);
       
       // Utiliser l'API standard de Supabase pour l'inscription
-      const { user, error } = await supabaseAuth.signUp(email, password, { is_admin: isAdmin });
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            is_admin: isAdmin
+          }
+        }
+      });
       
       if (error) {
         console.error('Erreur d\'inscription:', error);
         return false;
       }
       
-      if (user) {
+      if (data.user) {
         console.log('Inscription réussie via l\'API standard');
         return true;
       }

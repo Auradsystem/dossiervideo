@@ -13,7 +13,7 @@ import {
   Tab
 } from '@mui/material';
 import { useAppContext } from '../context/AppContext';
-import { supabase, supabaseAuth } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -106,13 +106,16 @@ const LoginForm: React.FC = () => {
     setIsLoading(true);
     
     try {
-      const { user, error: signUpError } = await supabaseAuth.signUp(email, password);
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password
+      });
       
       if (signUpError) {
         throw signUpError;
       }
       
-      if (user) {
+      if (data.user) {
         setSuccess('Inscription réussie ! Vous pouvez maintenant vous connecter.');
         setEmail('');
         setPassword('');
