@@ -20,14 +20,16 @@ import {
   IconButton,
   Tooltip,
   Alert,
-  Snackbar
+  Snackbar,
+  CircularProgress
 } from '@mui/material';
 import { 
   Add as AddIcon, 
   Edit as EditIcon, 
   Delete as DeleteIcon,
   Check as CheckIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 import { User } from '../types/User';
@@ -39,7 +41,11 @@ const AdminPanel: React.FC = () => {
     updateUser, 
     deleteUser, 
     currentUser,
-    isAdmin
+    isAdmin,
+    syncWithServer,
+    isSyncing,
+    lastSyncTime,
+    syncError
   } = useAppContext();
 
   const [openDialog, setOpenDialog] = useState(false);
@@ -172,7 +178,7 @@ const AdminPanel: React.FC = () => {
     return true;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
 
     try {
@@ -182,12 +188,17 @@ const AdminPanel: React.FC = () => {
         
         // Ajouter un nouvel utilisateur
         console.log('AdminPanel - Tentative d\'ajout d\'utilisateur:', { username, isAdmin: isUserAdmin });
-        const newUser = addUser(username, password, isUserAdmin);
+        
+        // Utiliser await pour attendre la réponse de l'API
+        const newUser = await addUser(username, password, isUserAdmin);
         
         console.log('AdminPanel - Résultat de l\'ajout:', { 
           newUser, 
           usersCount: users.length + 1 // +1 car l'état users n'est pas encore mis à jour
         });
+        
+        // Synchroniser avec le serveur après l'ajout
+        await syncWithServer();
       } else if (selectedUser) {
         // Mettre à jour un utilisateur existant
         const updates: Partial<User> = {
@@ -201,12 +212,16 @@ const AdminPanel: React.FC = () => {
         }
         
         console.log('AdminPanel - Mise à jour de l\'utilisateur:', { id: selectedUser.id, updates });
-        updateUser(selectedUser.id, updates);
+        await updateUser(selectedUser.id, updates);
+        
         setSnackbar({
           open: true,
           message: 'Utilisateur mis à jour avec succès',
           severity: 'success'
         });
+        
+        // Synchroniser avec le serveur après la mise à jour
+        await syncWithServer();
       }
       
       handleCloseDialog();
@@ -221,16 +236,20 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = (user: User) => {
+  const handleDeleteUser = async (user: User) => {
     if (window.confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur ${user.username} ?`)) {
       try {
         console.log('AdminPanel - Suppression de l\'utilisateur:', user);
-        deleteUser(user.id);
+        await deleteUser(user.id);
+        
         setSnackbar({
           open: true,
           message: 'Utilisateur supprimé avec succès',
           severity: 'success'
         });
+        
+        // Synchroniser avec le serveur après la suppression
+        await syncWithServer();
       } catch (error) {
         console.error('Erreur lors de la suppression de l\'utilisateur:', error);
         setSnackbar({
@@ -239,6 +258,24 @@ const AdminPanel: React.FC = () => {
           severity: 'error'
         });
       }
+    }
+  };
+
+  const handleSyncWithServer = async () => {
+    try {
+      await syncWithServer();
+      setSnackbar({
+        open: true,
+        message: 'Synchronisation réussie',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.error('Erreur lors de la synchronisation:', error);
+      setSnackbar({
+        open: true,
+        message: 'Erreur lors de la synchronisation',
+        severity: 'error'
+      });
     }
   };
 
@@ -277,14 +314,36 @@ const AdminPanel: React.FC = () => {
         <Typography variant="h4" component="h1">
           Gestion des utilisateurs
         </Typography>
-        <Button 
-          variant="contained" 
-          startIcon={<AddIcon />}
-          onClick={handleOpenAddDialog}
-        >
-          Ajouter un utilisateur
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button 
+            variant="outlined" 
+            startIcon={isSyncing ? <CircularProgress size={20} /> : <RefreshIcon />}
+            onClick={handleSyncWithServer}
+            disabled={isSyncing}
+          >
+            {isSyncing ? 'Synchronisation...' : 'Synchroniser'}
+          </Button>
+          <Button 
+            variant="contained" 
+            startIcon={<AddIcon />}
+            onClick={handleOpenAddDialog}
+          >
+            Ajouter un utilisateur
+          </Button>
+        </Box>
       </Box>
+
+      {syncError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Erreur de synchronisation: {syncError}
+        </Alert>
+      )}
+
+      {lastSyncTime && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Dernière synchronisation: {formatDate(lastSyncTime)}
+        </Typography>
+      )}
 
       <Paper sx={{ width: '100%', overflow: 'hidden' }}>
         <TableContainer sx={{ maxHeight: 'calc(100vh - 250px)' }}>
@@ -401,7 +460,11 @@ const AdminPanel: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Annuler</Button>
-          <Button onClick={handleSubmit} variant="contained">
+          <Button 
+            onClick={handleSubmit} 
+            variant="contained"
+            disabled={isSyncing}
+          >
             {dialogMode === 'add' ? 'Ajouter' : 'Enregistrer'}
           </Button>
         </DialogActions>

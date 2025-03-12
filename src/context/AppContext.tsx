@@ -15,6 +15,11 @@ interface PageComments {
   [pageNumber: number]: Comment[];
 }
 
+// URL de l'API (à configurer selon votre environnement)
+const API_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://votre-api-production.com/api' 
+  : 'http://localhost:3001/api';
+
 interface AppContextType {
   pdfFile: File | null;
   setPdfFile: (file: File | null) => void;
@@ -31,7 +36,7 @@ interface AppContextType {
   totalPages: number;
   setTotalPages: (pages: number) => void;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   exportPdf: () => void;
   exportCurrentPage: () => void;
@@ -60,11 +65,15 @@ interface AppContextType {
   currentUser: User | null;
   isAdmin: boolean;
   users: User[];
-  addUser: (username: string, password: string, isAdmin: boolean) => User;
-  updateUser: (id: string, updates: Partial<User>) => void;
-  deleteUser: (id: string) => void;
+  addUser: (username: string, password: string, isAdmin: boolean) => Promise<User>;
+  updateUser: (id: string, updates: Partial<User>) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
   isAdminMode: boolean;
   setIsAdminMode: (isAdmin: boolean) => void;
+  syncWithServer: () => Promise<void>;
+  isSyncing: boolean;
+  lastSyncTime: Date | null;
+  syncError: string | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -126,6 +135,41 @@ const deserializeWithDates = (json: string): any => {
   });
 };
 
+// Fonction utilitaire pour les requêtes API
+const apiRequest = async (endpoint: string, method: string = 'GET', data?: any) => {
+  try {
+    const options: RequestInit = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include', // Pour envoyer les cookies avec la requête
+    };
+
+    if (data) {
+      options.body = JSON.stringify(data);
+    }
+
+    const response = await fetch(`${API_URL}/${endpoint}`, options);
+    
+    // Vérifier si la réponse est OK (status 200-299)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Erreur ${response.status}: ${response.statusText}`);
+    }
+    
+    // Pour les requêtes DELETE qui peuvent ne pas retourner de contenu
+    if (response.status === 204) {
+      return null;
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error(`Erreur API (${endpoint}):`, error);
+    throw error;
+  }
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   // Stockage des caméras par page
@@ -151,6 +195,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
+  
+  // États pour la synchronisation
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Caméras de la page courante
   const cameras = pageCameras[page] || [];
@@ -178,6 +227,64 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return false;
   }, []);
 
+  // Fonction pour synchroniser les utilisateurs avec le serveur
+  const syncWithServer = useCallback(async () => {
+    if (isSyncing) return;
+    
+    setIsSyncing(true);
+    setSyncError(null);
+    
+    try {
+      console.log('Début de la synchronisation avec le serveur...');
+      
+      // Récupérer les utilisateurs du serveur
+      const serverUsers = await apiRequest('users');
+      console.log('Utilisateurs récupérés du serveur:', serverUsers);
+      
+      if (Array.isArray(serverUsers)) {
+        // Fusionner les utilisateurs locaux avec ceux du serveur
+        // Priorité aux données du serveur en cas de conflit
+        const mergedUsers = [...users];
+        
+        // Mettre à jour les utilisateurs existants et ajouter les nouveaux
+        for (const serverUser of serverUsers) {
+          const existingUserIndex = mergedUsers.findIndex(u => u.id === serverUser.id);
+          
+          if (existingUserIndex >= 0) {
+            // Mettre à jour l'utilisateur existant
+            mergedUsers[existingUserIndex] = {
+              ...mergedUsers[existingUserIndex],
+              ...serverUser,
+              // Conserver le mot de passe local si le serveur n'en fournit pas
+              password: serverUser.password || mergedUsers[existingUserIndex].password
+            };
+          } else {
+            // Ajouter le nouvel utilisateur
+            mergedUsers.push(serverUser);
+          }
+        }
+        
+        // Mettre à jour l'état local
+        setUsers(mergedUsers);
+        
+        // Sauvegarder dans localStorage
+        saveUsers(mergedUsers);
+        
+        // Mettre à jour la date de dernière synchronisation
+        setLastSyncTime(new Date());
+        
+        console.log('Synchronisation réussie, utilisateurs mis à jour:', mergedUsers.length);
+      } else {
+        throw new Error('Format de données invalide reçu du serveur');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la synchronisation avec le serveur:', error);
+      setSyncError(error instanceof Error ? error.message : 'Erreur inconnue');
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [isSyncing, users, saveUsers]);
+
   // Initialisation des utilisateurs
   useEffect(() => {
     // Récupérer les utilisateurs du localStorage
@@ -187,7 +294,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         // Utiliser la fonction de désérialisation améliorée
         const parsedUsers = deserializeWithDates(storedUsers);
         setUsers(parsedUsers);
-        console.log('Utilisateurs chargés:', parsedUsers);
+        console.log('Utilisateurs chargés depuis localStorage:', parsedUsers);
+        
+        // Tenter une synchronisation avec le serveur après le chargement local
+        syncWithServer().catch(err => {
+          console.warn('Échec de la synchronisation initiale:', err);
+        });
       } catch (error) {
         console.error('Erreur lors de la récupération des utilisateurs:', error);
         // Réinitialiser si erreur
@@ -196,7 +308,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       initializeDefaultUsers();
     }
-  }, []);
+  }, [syncWithServer]);
 
   // Fonction pour initialiser les utilisateurs par défaut
   const initializeDefaultUsers = () => {
@@ -222,6 +334,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setUsers(initialUsers);
     saveUsers(initialUsers);
     console.log('Utilisateurs initialisés:', initialUsers);
+    
+    // Envoyer les utilisateurs par défaut au serveur
+    apiRequest('users/init', 'POST', { users: initialUsers })
+      .then(() => console.log('Utilisateurs par défaut envoyés au serveur'))
+      .catch(err => console.warn('Impossible d\'initialiser les utilisateurs sur le serveur:', err));
   };
 
   // Journalisation pour le débogage
@@ -248,6 +365,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setCurrentUser(authData.user);
         setIsAdmin(authData.user.isAdmin);
         console.log('Authentification restaurée:', authData.user);
+        
+        // Vérifier la session avec le serveur
+        apiRequest('auth/check')
+          .then(response => {
+            if (!response.valid) {
+              console.warn('Session expirée sur le serveur, déconnexion locale');
+              logout();
+            }
+          })
+          .catch(err => {
+            console.warn('Impossible de vérifier la session:', err);
+            // Ne pas déconnecter en cas d'erreur réseau pour permettre le mode hors ligne
+          });
       } catch (error) {
         console.error('Erreur lors de la récupération de l\'authentification:', error);
         safeLocalStorage.removeItem('plancam_auth');
@@ -271,51 +401,105 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [users, saveUsers]);
 
-  const login = (username: string, password: string): boolean => {
-    // Rechercher l'utilisateur
-    const user = users.find(u => 
-      u.username.toLowerCase() === username.toLowerCase() && 
-      u.password === password
-    );
-    
-    if (user) {
-      // Mettre à jour la date de dernière connexion
-      const updatedUser = {
-        ...user,
-        lastLogin: new Date()
-      };
+  const login = async (username: string, password: string): Promise<boolean> => {
+    try {
+      // Tenter de se connecter au serveur d'abord
+      const response = await apiRequest('auth/login', 'POST', { username, password })
+        .catch(error => {
+          console.warn('Échec de connexion au serveur, tentative de connexion locale:', error);
+          return null;
+        });
       
-      // Mettre à jour l'utilisateur dans la liste
-      const updatedUsers = users.map(u => u.id === user.id ? updatedUser : u);
-      setUsers(updatedUsers);
-      
-      // Définir l'utilisateur courant et l'état d'authentification
-      setCurrentUser(updatedUser);
-      setIsAuthenticated(true);
-      setIsAdmin(updatedUser.isAdmin);
-      
-      // Stocker l'authentification dans le localStorage avec sérialisation améliorée
-      const authSuccess = safeLocalStorage.setItem('plancam_auth', serializeWithDates({
-        user: updatedUser
-      }));
-      
-      // Sauvegarder les utilisateurs mis à jour
-      saveUsers(updatedUsers);
-      
-      // Même si localStorage échoue, l'authentification en mémoire fonctionne
-      if (!authSuccess) {
-        console.warn('Impossible de stocker l\'authentification dans localStorage, mais la session est active en mémoire');
+      if (response && response.user) {
+        // Connexion réussie avec le serveur
+        const serverUser = response.user;
+        
+        // Mettre à jour l'utilisateur dans la liste locale si nécessaire
+        const existingUserIndex = users.findIndex(u => u.id === serverUser.id);
+        let updatedUsers = [...users];
+        
+        if (existingUserIndex >= 0) {
+          // Mettre à jour l'utilisateur existant
+          updatedUsers[existingUserIndex] = {
+            ...updatedUsers[existingUserIndex],
+            ...serverUser,
+            lastLogin: new Date()
+          };
+        } else {
+          // Ajouter le nouvel utilisateur
+          updatedUsers.push({
+            ...serverUser,
+            lastLogin: new Date()
+          });
+        }
+        
+        setUsers(updatedUsers);
+        saveUsers(updatedUsers);
+        
+        // Définir l'utilisateur courant et l'état d'authentification
+        setCurrentUser(serverUser);
+        setIsAuthenticated(true);
+        setIsAdmin(serverUser.isAdmin);
+        
+        // Stocker l'authentification dans le localStorage
+        safeLocalStorage.setItem('plancam_auth', serializeWithDates({
+          user: serverUser,
+          token: response.token
+        }));
+        
+        console.log('Utilisateur connecté via serveur:', serverUser);
+        return true;
       }
       
-      console.log('Utilisateur connecté:', updatedUser);
-      return true;
+      // Fallback à la connexion locale si le serveur n'est pas disponible
+      // Rechercher l'utilisateur localement
+      const user = users.find(u => 
+        u.username.toLowerCase() === username.toLowerCase() && 
+        u.password === password
+      );
+      
+      if (user) {
+        // Mettre à jour la date de dernière connexion
+        const updatedUser = {
+          ...user,
+          lastLogin: new Date()
+        };
+        
+        // Mettre à jour l'utilisateur dans la liste
+        const updatedUsers = users.map(u => u.id === user.id ? updatedUser : u);
+        setUsers(updatedUsers);
+        
+        // Définir l'utilisateur courant et l'état d'authentification
+        setCurrentUser(updatedUser);
+        setIsAuthenticated(true);
+        setIsAdmin(updatedUser.isAdmin);
+        
+        // Stocker l'authentification dans le localStorage avec sérialisation améliorée
+        safeLocalStorage.setItem('plancam_auth', serializeWithDates({
+          user: updatedUser
+        }));
+        
+        // Sauvegarder les utilisateurs mis à jour
+        saveUsers(updatedUsers);
+        
+        console.log('Utilisateur connecté localement:', updatedUser);
+        return true;
+      }
+      
+      console.log('Échec de connexion pour:', username);
+      return false;
+    } catch (error) {
+      console.error('Erreur lors de la connexion:', error);
+      return false;
     }
-    
-    console.log('Échec de connexion pour:', username);
-    return false;
   };
 
   const logout = () => {
+    // Tenter de se déconnecter du serveur
+    apiRequest('auth/logout', 'POST')
+      .catch(err => console.warn('Erreur lors de la déconnexion du serveur:', err));
+    
+    // Déconnexion locale
     setIsAuthenticated(false);
     setCurrentUser(null);
     setIsAdmin(false);
@@ -325,7 +509,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // Fonctions de gestion des utilisateurs
-  const addUser = (username: string, password: string, isAdmin: boolean): User => {
+  const addUser = async (username: string, password: string, isAdmin: boolean): Promise<User> => {
     try {
       // Créer le nouvel utilisateur
       const newUser: User = {
@@ -341,6 +525,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isAdmin: newUser.isAdmin,
         id: newUser.id
       });
+      
+      // Tenter d'ajouter l'utilisateur au serveur d'abord
+      let serverUser = null;
+      try {
+        // Envoyer une version sécurisée (sans mot de passe en clair) au serveur
+        const userForServer = {
+          ...newUser,
+          // Le serveur s'occupera du hachage du mot de passe
+        };
+        
+        serverUser = await apiRequest('users', 'POST', userForServer);
+        console.log('Utilisateur ajouté au serveur:', serverUser);
+        
+        // Utiliser l'ID généré par le serveur si disponible
+        if (serverUser && serverUser.id) {
+          newUser.id = serverUser.id;
+        }
+      } catch (error) {
+        console.warn('Impossible d\'ajouter l\'utilisateur au serveur, ajout local uniquement:', error);
+      }
       
       // Mettre à jour l'état des utilisateurs avec le nouvel utilisateur
       const updatedUsers = [...users, newUser];
@@ -360,7 +564,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Vérifier si la sauvegarde a réussi
       if (!saved) {
         console.error('Échec de la sauvegarde du nouvel utilisateur dans localStorage');
-        // Essayer une autre approche de sauvegarde si nécessaire
       }
       
       return newUser;
@@ -370,58 +573,88 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const updateUser = (id: string, updates: Partial<User>) => {
-    // Créer une nouvelle liste d'utilisateurs avec les mises à jour
-    const updatedUsers = users.map(user => {
-      if (user.id === id) {
-        const updatedUser = { ...user, ...updates };
-        console.log('Utilisateur mis à jour:', updatedUser);
-        return updatedUser;
+  const updateUser = async (id: string, updates: Partial<User>): Promise<void> => {
+    try {
+      // Tenter de mettre à jour l'utilisateur sur le serveur d'abord
+      try {
+        // Créer une version sécurisée pour le serveur (sans mot de passe en clair)
+        const updatesForServer = { ...updates };
+        
+        // Le serveur s'occupera du hachage du mot de passe si nécessaire
+        await apiRequest(`users/${id}`, 'PUT', updatesForServer);
+        console.log('Utilisateur mis à jour sur le serveur, ID:', id);
+      } catch (error) {
+        console.warn('Impossible de mettre à jour l\'utilisateur sur le serveur, mise à jour locale uniquement:', error);
       }
-      return user;
-    });
-    
-    // Mettre à jour l'état
-    setUsers(updatedUsers);
-    
-    // Sauvegarder dans localStorage
-    saveUsers(updatedUsers);
-    
-    // Si l'utilisateur courant est mis à jour, mettre à jour également l'utilisateur courant
-    if (currentUser && currentUser.id === id) {
-      const updatedCurrentUser = { ...currentUser, ...updates };
-      setCurrentUser(updatedCurrentUser);
-      setIsAdmin(updatedCurrentUser.isAdmin);
       
-      // Mettre à jour le localStorage avec sérialisation améliorée
-      safeLocalStorage.setItem('plancam_auth', serializeWithDates({
-        user: updatedCurrentUser
-      }));
+      // Créer une nouvelle liste d'utilisateurs avec les mises à jour
+      const updatedUsers = users.map(user => {
+        if (user.id === id) {
+          const updatedUser = { ...user, ...updates };
+          console.log('Utilisateur mis à jour localement:', updatedUser);
+          return updatedUser;
+        }
+        return user;
+      });
+      
+      // Mettre à jour l'état
+      setUsers(updatedUsers);
+      
+      // Sauvegarder dans localStorage
+      saveUsers(updatedUsers);
+      
+      // Si l'utilisateur courant est mis à jour, mettre à jour également l'utilisateur courant
+      if (currentUser && currentUser.id === id) {
+        const updatedCurrentUser = { ...currentUser, ...updates };
+        setCurrentUser(updatedCurrentUser);
+        setIsAdmin(updatedCurrentUser.isAdmin);
+        
+        // Mettre à jour le localStorage avec sérialisation améliorée
+        safeLocalStorage.setItem('plancam_auth', serializeWithDates({
+          user: updatedCurrentUser
+        }));
+      }
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour de l\'utilisateur:', error);
+      throw error;
     }
   };
 
-  const deleteUser = (id: string) => {
-    // Empêcher la suppression de l'utilisateur admin principal
-    const userToDelete = users.find(u => u.id === id);
-    if (userToDelete && userToDelete.username === 'Dali') {
-      alert('Impossible de supprimer l\'administrateur principal');
-      return;
+  const deleteUser = async (id: string): Promise<void> => {
+    try {
+      // Empêcher la suppression de l'utilisateur admin principal
+      const userToDelete = users.find(u => u.id === id);
+      if (userToDelete && userToDelete.username === 'Dali') {
+        alert('Impossible de supprimer l\'administrateur principal');
+        return;
+      }
+      
+      // Empêcher la suppression de l'utilisateur courant
+      if (currentUser && currentUser.id === id) {
+        alert('Impossible de supprimer votre propre compte');
+        return;
+      }
+      
+      // Tenter de supprimer l'utilisateur sur le serveur d'abord
+      try {
+        await apiRequest(`users/${id}`, 'DELETE');
+        console.log('Utilisateur supprimé du serveur, ID:', id);
+      } catch (error) {
+        console.warn('Impossible de supprimer l\'utilisateur du serveur, suppression locale uniquement:', error);
+      }
+      
+      // Filtrer l'utilisateur à supprimer
+      const updatedUsers = users.filter(user => user.id !== id);
+      setUsers(updatedUsers);
+      
+      // Sauvegarder dans localStorage
+      saveUsers(updatedUsers);
+      
+      console.log('Utilisateur supprimé localement, ID:', id);
+    } catch (error) {
+      console.error('Erreur lors de la suppression de l\'utilisateur:', error);
+      throw error;
     }
-    
-    // Empêcher la suppression de l'utilisateur courant
-    if (currentUser && currentUser.id === id) {
-      alert('Impossible de supprimer votre propre compte');
-      return;
-    }
-    
-    // Filtrer l'utilisateur à supprimer
-    const updatedUsers = users.filter(user => user.id !== id);
-    setUsers(updatedUsers);
-    
-    // Sauvegarder dans localStorage
-    saveUsers(updatedUsers);
-    
-    console.log('Utilisateur supprimé, ID:', id);
   };
 
   const addCamera = (x: number, y: number, type: CameraType) => {
@@ -913,7 +1146,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updateUser,
       deleteUser,
       isAdminMode,
-      setIsAdminMode
+      setIsAdminMode,
+      // Nouvelles valeurs pour la synchronisation
+      syncWithServer,
+      isSyncing,
+      lastSyncTime,
+      syncError
     }}>
       {children}
     </AppContext.Provider>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Paper, 
@@ -6,7 +6,8 @@ import {
   TextField, 
   Button, 
   Alert,
-  Container
+  Container,
+  CircularProgress
 } from '@mui/material';
 import { useAppContext } from '../context/AppContext';
 
@@ -14,9 +15,17 @@ const LoginForm: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login } = useAppContext();
+  const [isLoading, setIsLoading] = useState(false);
+  const { login, syncWithServer } = useAppContext();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Synchroniser avec le serveur au chargement
+  useEffect(() => {
+    syncWithServer().catch(err => {
+      console.warn('Échec de la synchronisation initiale:', err);
+    });
+  }, [syncWithServer]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
@@ -25,9 +34,18 @@ const LoginForm: React.FC = () => {
       return;
     }
     
-    const success = login(username, password);
-    if (!success) {
-      setError('Identifiants incorrects');
+    setIsLoading(true);
+    
+    try {
+      const success = await login(username, password);
+      if (!success) {
+        setError('Identifiants incorrects');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la connexion:', error);
+      setError('Une erreur est survenue lors de la connexion');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -72,6 +90,7 @@ const LoginForm: React.FC = () => {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
+            disabled={isLoading}
           />
           
           <TextField
@@ -82,6 +101,7 @@ const LoginForm: React.FC = () => {
             margin="normal"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={isLoading}
           />
           
           <Button 
@@ -90,8 +110,9 @@ const LoginForm: React.FC = () => {
             fullWidth 
             size="large"
             sx={{ mt: 3 }}
+            disabled={isLoading}
           >
-            Se connecter
+            {isLoading ? <CircularProgress size={24} /> : 'Se connecter'}
           </Button>
         </Box>
       </Paper>
