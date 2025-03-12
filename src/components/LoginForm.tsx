@@ -20,7 +20,9 @@ import {
   Visibility, 
   VisibilityOff, 
   Login as LoginIcon,
-  AutoAwesome as MagicIcon
+  AutoAwesome as MagicIcon,
+  AccountCircle as AccountIcon,
+  Lock as LockIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 

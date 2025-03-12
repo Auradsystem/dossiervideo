@@ -38,9 +38,9 @@ import {
   Camera as CameraIcon,
   Settings as SettingsIcon,
   Image as ImageIcon,
-  ExpandLess,
-  ExpandMore,
-  Delete as DeleteIcon,
+  ChevronDown,
+  ChevronUp,
+  Trash as DeleteIcon,
   Edit as EditIcon
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -184,7 +184,7 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
           <Box sx={{ p: 2 }}>
             <ListItemButton onClick={() => toggleSection('general')}>
               <ListItemText primary="Gestion du plan" />
-              {openSection === 'general' ? <ExpandLess /> : <ExpandMore />}
+              {openSection === 'general' ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </ListItemButton>
             
             <Collapse in={openSection === 'general'} timeout="auto" unmountOnExit>
@@ -243,7 +243,7 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
                     primary="Édition de la caméra" 
                     secondary={selectedCameraData.name}
                   />
-                  {openSection === 'camera' ? <ExpandLess /> : <ExpandMore />}
+                  {openSection === 'camera' ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </ListItemButton>
                 
                 <Collapse in={openSection === 'camera'} timeout="auto" unmountOnExit>
@@ -367,7 +367,7 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
           <Box sx={{ p: 2 }}>
             <ListItemButton onClick={() => toggleSection('settings')}>
               <ListItemText primary="Paramètres des caméras" />
-              {openSection === 'settings' ? <ExpandLess /> : <ExpandMore />}
+              {openSection === 'settings' ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </ListItemButton>
             
             <Collapse in={openSection === 'settings'} timeout="auto" unmountOnExit>

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Group } from 'react-konva';
 import { Box, CircularProgress, Typography, IconButton, Paper, useMediaQuery, useTheme } from '@mui/material';
-import { ZoomIn, ZoomOut, RotateLeft } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
@@ -256,7 +256,7 @@ const PdfViewer: React.FC = () => {
             disabled={page <= 1 || loading}
             size={isSmallScreen ? 'small' : 'medium'}
           >
-            <RotateLeft size={isSmallScreen ? 16 : 20} style={{ transform: 'rotate(90deg)' }} />
+            <RotateCcw size={isSmallScreen ? 16 : 20} style={{ transform: 'rotate(90deg)' }} />
           </IconButton>
           
           <Typography variant="body2">
@@ -268,7 +268,7 @@ const PdfViewer: React.FC = () => {
             disabled={page >= totalPages || loading}
             size={isSmallScreen ? 'small' : 'medium'}
           >
-            <RotateLeft size={isSmallScreen ? 16 : 20} style={{ transform: 'rotate(-90deg)' }} />
+            <RotateCcw size={isSmallScreen ? 16 : 20} style={{ transform: 'rotate(-90deg)' }} />
           </IconButton>
         </Box>
         
@@ -298,7 +298,7 @@ const PdfViewer: React.FC = () => {
             disabled={loading}
             size={isSmallScreen ? 'small' : 'medium'}
           >
-            <RotateLeft size={isSmallScreen ? 16 : 20} />
+            <RotateCcw size={isSmallScreen ? 16 : 20} />
           </IconButton>
         </Box>
       </Paper>
