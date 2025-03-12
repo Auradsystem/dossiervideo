@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Paper, 
@@ -23,7 +23,11 @@ import {
   CardActions,
   Chip,
   Collapse,
-  Alert
+  Alert,
+  useMediaQuery,
+  useTheme,
+  Tabs,
+  Tab
 } from '@mui/material';
 import { 
   AutoAwesome as MagicIcon,
@@ -32,12 +36,11 @@ import {
   Visibility as VisibilityIcon,
   Add as AddIcon,
   Close as CloseIcon,
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
   Check as CheckIcon,
   Warning as WarningIcon,
   Info as InfoIcon
 } from '@mui/icons-material';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { CameraType } from '../types/Camera';
 
@@ -54,7 +57,9 @@ interface AnalysisResult {
 }
 
 const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
-  const { cameras, addCamera, page, pdfFile } = useAppContext();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { cameras, addCamera, page, pdfFile, clearCurrentPage, updateCamera } = useAppContext();
   
   const [activeTab, setActiveTab] = useState<'analyze' | 'optimize' | 'generate'>('analyze');
   const [isLoading, setIsLoading] = useState(false);
@@ -62,11 +67,43 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [tabIndex, setTabIndex] = useState(0);
+  
+  // Réinitialiser l'état lorsque le dialogue s'ouvre
+  useEffect(() => {
+    if (open) {
+      setAnalysisResult(null);
+      setError(null);
+      setIsLoading(false);
+      
+      // Définir un prompt par défaut en fonction du contexte
+      if (cameras.length === 0) {
+        setPrompt('Générer des caméras pour couvrir les entrées principales et les zones critiques');
+      } else {
+        setPrompt(`Optimiser la disposition des ${cameras.length} caméras existantes`);
+      }
+    }
+  }, [open, cameras.length]);
+  
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabIndex(newValue);
+    switch (newValue) {
+      case 0:
+        setActiveTab('analyze');
+        break;
+      case 1:
+        setActiveTab('optimize');
+        break;
+      case 2:
+        setActiveTab('generate');
+        break;
+    }
+  };
   
   // Fonction pour analyser la disposition des caméras
   const analyzeCameras = async () => {
-    if (cameras.length === 0) {
-      setError('Aucune caméra à analyser. Veuillez d\'abord ajouter des caméras au plan.');
+    if (!pdfFile) {
+      setError('Aucun plan chargé. Veuillez d\'abord charger un PDF.');
       return;
     }
     
@@ -74,26 +111,56 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
     setError(null);
     
     try {
-      // Simuler un appel à l'API GPT-4o
+      // Simuler un appel à l'API d'analyse
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Résultat simulé (à remplacer par la réponse de l'API)
-      const result: AnalysisResult = {
-        coverage: Math.min(Math.round(cameras.length * 15 + Math.random() * 20), 100),
-        blindSpots: Math.max(5 - cameras.length, 0),
-        suggestions: [
-          'Ajouter une caméra dans le coin supérieur droit pour améliorer la couverture',
-          'Augmenter l\'angle de vue des caméras aux entrées principales',
-          'Repositionner la caméra CAM-002 pour réduire les zones aveugles'
-        ],
-        optimizationTips: [
-          'Utiliser des caméras PTZ pour les grandes zones ouvertes',
-          'Assurer un chevauchement de 15-20% entre les zones couvertes',
-          'Placer les caméras en hauteur (2.5-3m) pour une meilleure couverture'
-        ]
-      };
+      // Calculer les métriques d'analyse basées sur les caméras existantes
+      const coverage = cameras.length > 0 
+        ? Math.min(Math.round(cameras.length * 15 + Math.random() * 10), 100)
+        : 0;
+        
+      const blindSpots = Math.max(5 - cameras.length, 0);
       
-      setAnalysisResult(result);
+      // Générer des suggestions basées sur l'analyse
+      const suggestions = [];
+      const optimizationTips = [];
+      
+      if (cameras.length === 0) {
+        suggestions.push('Aucune caméra présente. Ajoutez des caméras aux entrées principales.');
+        suggestions.push('Placez des caméras dans les zones de passage fréquent.');
+        suggestions.push('Couvrez les zones sensibles comme les accès et les espaces ouverts.');
+        
+        optimizationTips.push('Utilisez des caméras dôme pour les espaces intérieurs.');
+        optimizationTips.push('Préférez les caméras PTZ pour les grandes zones ouvertes.');
+        optimizationTips.push('Assurez une couverture des entrées et sorties.');
+      } else if (cameras.length < 3) {
+        suggestions.push('Couverture insuffisante. Ajoutez plus de caméras.');
+        suggestions.push('Positionnez des caméras supplémentaires aux points d\'entrée.');
+        suggestions.push('Augmentez l\'angle de vue des caméras existantes si possible.');
+        
+        optimizationTips.push('Visez une couverture minimale de 70% des zones critiques.');
+        optimizationTips.push('Assurez un chevauchement entre les zones couvertes.');
+        optimizationTips.push('Utilisez différents types de caméras selon les besoins spécifiques.');
+      } else {
+        suggestions.push('Vérifiez les zones aveugles entre les caméras.');
+        suggestions.push('Ajustez l\'angle des caméras pour optimiser la couverture.');
+        if (cameras.length < 6) {
+          suggestions.push('Envisagez d\'ajouter 1-2 caméras supplémentaires pour les zones périphériques.');
+        } else {
+          suggestions.push('La disposition actuelle offre une bonne couverture de base.');
+        }
+        
+        optimizationTips.push('Assurez un chevauchement de 15-20% entre les zones couvertes.');
+        optimizationTips.push('Ajustez la hauteur des caméras pour une meilleure perspective.');
+        optimizationTips.push('Documentez l\'emplacement et la configuration de chaque caméra.');
+      }
+      
+      setAnalysisResult({
+        coverage,
+        blindSpots,
+        suggestions,
+        optimizationTips
+      });
     } catch (error) {
       console.error('Erreur lors de l\'analyse:', error);
       setError('Une erreur est survenue lors de l\'analyse. Veuillez réessayer.');
@@ -104,6 +171,11 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
   
   // Fonction pour optimiser la disposition des caméras
   const optimizeCameras = async () => {
+    if (!pdfFile) {
+      setError('Aucun plan chargé. Veuillez d\'abord charger un PDF.');
+      return;
+    }
+    
     if (cameras.length === 0) {
       setError('Aucune caméra à optimiser. Veuillez d\'abord ajouter des caméras au plan.');
       return;
@@ -113,25 +185,43 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
     setError(null);
     
     try {
-      // Simuler un appel à l'API GPT-4o
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Simuler un appel à l'API d'optimisation
+      await new Promise(resolve => setTimeout(resolve, 2500));
       
-      // Simuler l'optimisation (à remplacer par la réponse de l'API)
-      // Dans une implémentation réelle, on utiliserait les suggestions de GPT-4o
-      // pour ajuster les positions et paramètres des caméras
+      // Optimiser les caméras existantes (simulé)
+      // Dans une implémentation réelle, on utiliserait l'IA pour ajuster les positions et paramètres
+      
+      // Ajuster les angles et distances pour améliorer la couverture
+      cameras.forEach(camera => {
+        // Simuler des ajustements d'optimisation
+        const optimizedAngle = Math.min(camera.angle + 10, 360);
+        const optimizedDistance = Math.min(camera.viewDistance + 20, 500);
+        const optimizedRotation = camera.rotation ? camera.rotation + 15 : 15;
+        
+        // Appliquer les optimisations
+        updateCamera(camera.id, {
+          angle: optimizedAngle,
+          viewDistance: optimizedDistance,
+          rotation: optimizedRotation
+        });
+      });
+      
+      // Calculer les métriques après optimisation
+      const newCoverage = Math.min(Math.round(cameras.length * 20 + Math.random() * 10), 100);
+      const newBlindSpots = Math.max(3 - cameras.length, 0);
       
       setAnalysisResult({
-        coverage: Math.min(Math.round(cameras.length * 20 + Math.random() * 15), 100),
-        blindSpots: Math.max(3 - cameras.length, 0),
+        coverage: newCoverage,
+        blindSpots: newBlindSpots,
         suggestions: [
-          'Disposition optimisée avec succès',
-          'La couverture a été améliorée de 15%',
-          'Les zones aveugles ont été réduites'
+          'Optimisation réussie. La couverture a été améliorée.',
+          'Les angles et distances de vue ont été ajustés pour une meilleure efficacité.',
+          'Les zones critiques sont maintenant mieux couvertes.'
         ],
         optimizationTips: [
-          'Vérifier régulièrement la couverture des caméras',
-          'Ajuster les angles en fonction des changements d\'aménagement',
-          'Envisager l\'ajout de caméras supplémentaires pour les zones critiques'
+          'Vérifiez régulièrement la couverture en fonction des changements d\'aménagement.',
+          'Ajustez manuellement les caméras si nécessaire pour des besoins spécifiques.',
+          'Envisagez d\'ajouter des caméras supplémentaires si certaines zones restent mal couvertes.'
         ]
       });
     } catch (error) {
@@ -153,42 +243,76 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
     setError(null);
     
     try {
-      // Simuler un appel à l'API GPT-4o
+      // Simuler un appel à l'API de génération
       await new Promise(resolve => setTimeout(resolve, 2500));
       
-      // Simuler la génération de caméras (à remplacer par la réponse de l'API)
-      // Dans une implémentation réelle, on utiliserait les suggestions de GPT-4o
-      // pour placer automatiquement des caméras aux endroits stratégiques
+      // Déterminer si on doit remplacer les caméras existantes
+      const shouldReplace = cameras.length > 0 && 
+        prompt.toLowerCase().includes('remplacer');
       
-      // Générer quelques positions aléatoires pour les caméras
-      const canvasWidth = 800; // Largeur approximative du canvas
-      const canvasHeight = 600; // Hauteur approximative du canvas
-      
-      const cameraTypes: CameraType[] = ['dome', 'bullet', 'ptz', 'fisheye'];
-      
-      // Générer 3 caméras aléatoires
-      for (let i = 0; i < 3; i++) {
-        const x = 100 + Math.random() * (canvasWidth - 200);
-        const y = 100 + Math.random() * (canvasHeight - 200);
-        const type = cameraTypes[Math.floor(Math.random() * cameraTypes.length)];
-        
-        // Ajouter la caméra (dans une implémentation réelle, ces positions seraient
-        // déterminées par l'analyse du plan par GPT-4o)
-        addCamera(x, y, type);
+      if (shouldReplace) {
+        clearCurrentPage();
       }
       
+      // Déterminer le nombre de caméras à générer
+      let cameraCount = 4; // Par défaut
+      
+      // Essayer d'extraire un nombre du prompt
+      const numberMatch = prompt.match(/\b(\d+)\b/);
+      if (numberMatch) {
+        cameraCount = parseInt(numberMatch[1], 10);
+      } else if (prompt.toLowerCase().includes('minimum')) {
+        cameraCount = 3;
+      } else if (prompt.toLowerCase().includes('maximum') || prompt.toLowerCase().includes('complet')) {
+        cameraCount = 6;
+      }
+      
+      // Limiter le nombre de caméras
+      cameraCount = Math.min(Math.max(cameraCount, 2), 8);
+      
+      // Générer des positions stratégiques pour les caméras
+      const canvasWidth = 800;
+      const canvasHeight = 600;
+      const cameraTypes: CameraType[] = ['dome', 'bullet', 'ptz', 'fisheye'];
+      
+      // Positions stratégiques simulées
+      // Dans une implémentation réelle, ces positions seraient déterminées par l'analyse du plan
+      const strategicPositions = [
+        { x: 150, y: 150, type: 'dome' }, // Coin supérieur gauche
+        { x: canvasWidth - 150, y: 150, type: 'bullet' }, // Coin supérieur droit
+        { x: 150, y: canvasHeight - 150, type: 'dome' }, // Coin inférieur gauche
+        { x: canvasWidth - 150, y: canvasHeight - 150, type: 'bullet' }, // Coin inférieur droit
+        { x: canvasWidth / 2, y: 150, type: 'ptz' }, // Milieu haut
+        { x: canvasWidth / 2, y: canvasHeight - 150, type: 'ptz' }, // Milieu bas
+        { x: 150, y: canvasHeight / 2, type: 'fisheye' }, // Milieu gauche
+        { x: canvasWidth - 150, y: canvasHeight / 2, type: 'fisheye' } // Milieu droit
+      ];
+      
+      // Sélectionner un sous-ensemble aléatoire de positions
+      const selectedPositions = strategicPositions.slice(0, cameraCount);
+      
+      // Ajouter les caméras
+      selectedPositions.forEach(pos => {
+        const type = pos.type as CameraType;
+        addCamera(pos.x, pos.y, type);
+      });
+      
+      // Calculer les métriques après génération
+      const newCoverage = Math.min(Math.round(cameraCount * 15 + Math.random() * 15), 100);
+      const newBlindSpots = Math.max(5 - cameraCount, 0);
+      
       setAnalysisResult({
-        coverage: 65 + Math.random() * 15,
-        blindSpots: 2,
+        coverage: newCoverage,
+        blindSpots: newBlindSpots,
         suggestions: [
-          '3 caméras ont été placées automatiquement',
-          'Les entrées principales sont couvertes',
-          'Envisager d\'ajouter des caméras supplémentaires pour les zones de stockage'
+          `${cameraCount} caméras ont été générées aux positions stratégiques.`,
+          'Les entrées principales et zones critiques sont couvertes.',
+          'Vous pouvez ajuster manuellement les caméras si nécessaire.'
         ],
         optimizationTips: [
-          'Ajuster les angles des caméras pour une couverture optimale',
-          'Vérifier les zones de chevauchement pour éviter la redondance',
-          'Ajouter des caméras supplémentaires si nécessaire'
+          'Vérifiez la couverture des zones spécifiques importantes pour votre contexte.',
+          'Ajustez les angles et distances de vue pour optimiser la couverture.',
+          'Envisagez d\'ajouter des caméras supplémentaires pour les zones non couvertes.'
         ]
       });
     } catch (error) {
@@ -206,32 +330,40 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
       return;
     }
     
+    if (!pdfFile) {
+      setError('Aucun plan chargé. Veuillez d\'abord charger un PDF.');
+      return;
+    }
+    
     setIsLoading(true);
     setError(null);
     
     try {
-      // Simuler un appel à l'API GPT-4o
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Analyser le prompt pour déterminer l'action à effectuer
+      const lowerPrompt = prompt.toLowerCase();
       
-      // Simuler une réponse (à remplacer par la réponse de l'API)
-      setAnalysisResult({
-        coverage: cameras.length > 0 ? Math.min(Math.round(cameras.length * 18 + Math.random() * 15), 100) : 0,
-        blindSpots: Math.max(4 - cameras.length, 0),
-        suggestions: [
-          'Analyse basée sur votre prompt personnalisé',
-          'Considérer les points d\'entrée comme prioritaires',
-          'Utiliser des caméras à grand angle pour les espaces ouverts'
-        ],
-        optimizationTips: [
-          'Adapter la hauteur des caméras en fonction de l\'espace',
-          'Vérifier les angles morts potentiels',
-          'Documenter l\'emplacement et la configuration de chaque caméra'
-        ]
-      });
+      if (lowerPrompt.includes('générer') || lowerPrompt.includes('créer') || lowerPrompt.includes('ajouter')) {
+        await generateCameras();
+      } else if (lowerPrompt.includes('optimiser') || lowerPrompt.includes('améliorer')) {
+        if (cameras.length === 0) {
+          // Si pas de caméras mais demande d'optimisation, générer des caméras
+          await generateCameras();
+        } else {
+          await optimizeCameras();
+        }
+      } else if (lowerPrompt.includes('analyser') || lowerPrompt.includes('évaluer')) {
+        await analyzeCameras();
+      } else {
+        // Action par défaut: analyser si des caméras existent, sinon générer
+        if (cameras.length > 0) {
+          await analyzeCameras();
+        } else {
+          await generateCameras();
+        }
+      }
     } catch (error) {
       console.error('Erreur lors de l\'exécution du prompt:', error);
       setError('Une erreur est survenue lors de l\'exécution du prompt. Veuillez réessayer.');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -266,58 +398,73 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
       </DialogTitle>
       
       <DialogContent sx={{ p: 0 }}>
-        <Box sx={{ display: 'flex', height: '500px' }}>
-          {/* Sidebar avec les outils */}
-          <Box sx={{ 
-            width: 250, 
-            borderRight: 1, 
-            borderColor: 'divider',
-            display: { xs: 'none', sm: 'block' }
-          }}>
-            <List component="nav">
-              <ListItem 
-                button 
-                selected={activeTab === 'analyze'}
-                onClick={() => setActiveTab('analyze')}
-              >
-                <ListItemIcon>
-                  <SearchIcon />
-                </ListItemIcon>
-                <ListItemText primary="Analyser les caméras" />
-              </ListItem>
-              
-              <ListItem 
-                button 
-                selected={activeTab === 'optimize'}
-                onClick={() => setActiveTab('optimize')}
-              >
-                <ListItemIcon>
-                  <VisibilityIcon />
-                </ListItemIcon>
-                <ListItemText primary="Optimiser la couverture" />
-              </ListItem>
-              
-              <ListItem 
-                button 
-                selected={activeTab === 'generate'}
-                onClick={() => setActiveTab('generate')}
-              >
-                <ListItemIcon>
-                  <CameraIcon />
-                </ListItemIcon>
-                <ListItemText primary="Générer des caméras" />
-              </ListItem>
-              
-              <Divider sx={{ my: 2 }} />
-              
-              <ListItem>
-                <ListItemText 
-                  primary="Statistiques" 
-                  secondary={`${cameras.length} caméras sur la page ${page}`} 
-                />
-              </ListItem>
-            </List>
-          </Box>
+        <Box sx={{ display: 'flex', height: '500px', flexDirection: isMobile ? 'column' : 'row' }}>
+          {/* Tabs pour mobile */}
+          {isMobile && (
+            <Tabs 
+              value={tabIndex} 
+              onChange={handleTabChange}
+              variant="fullWidth"
+              sx={{ borderBottom: 1, borderColor: 'divider' }}
+            >
+              <Tab icon={<SearchIcon />} label="Analyser" />
+              <Tab icon={<VisibilityIcon />} label="Optimiser" />
+              <Tab icon={<CameraIcon />} label="Générer" />
+            </Tabs>
+          )}
+          
+          {/* Sidebar avec les outils - visible uniquement sur desktop */}
+          {!isMobile && (
+            <Box sx={{ 
+              width: 250, 
+              borderRight: 1, 
+              borderColor: 'divider'
+            }}>
+              <List component="nav">
+                <ListItem 
+                  button 
+                  selected={activeTab === 'analyze'}
+                  onClick={() => setActiveTab('analyze')}
+                >
+                  <ListItemIcon>
+                    <SearchIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Analyser les caméras" />
+                </ListItem>
+                
+                <ListItem 
+                  button 
+                  selected={activeTab === 'optimize'}
+                  onClick={() => setActiveTab('optimize')}
+                >
+                  <ListItemIcon>
+                    <VisibilityIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Optimiser la couverture" />
+                </ListItem>
+                
+                <ListItem 
+                  button 
+                  selected={activeTab === 'generate'}
+                  onClick={() => setActiveTab('generate')}
+                >
+                  <ListItemIcon>
+                    <CameraIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Générer des caméras" />
+                </ListItem>
+                
+                <Divider sx={{ my: 2 }} />
+                
+                <ListItem>
+                  <ListItemText 
+                    primary="Statistiques" 
+                    secondary={`${cameras.length} caméras sur la page ${page}`} 
+                  />
+                </ListItem>
+              </List>
+            </Box>
+          )}
           
           {/* Contenu principal */}
           <Box sx={{ flexGrow: 1, p: 3, overflow: 'auto' }}>
@@ -335,7 +482,7 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
                 <Box sx={{ mb: 3 }}>
                   <TextField
                     fullWidth
-                    label="Prompt personnalisé (optionnel)"
+                    label="Instructions spécifiques (optionnel)"
                     placeholder="Ex: Analyser la couverture des entrées principales"
                     variant="outlined"
                     value={prompt}
@@ -368,6 +515,12 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
                 {error && (
                   <Alert severity="error" sx={{ mb: 3 }}>
                     {error}
+                  </Alert>
+                )}
+                
+                {!pdfFile && (
+                  <Alert severity="warning" sx={{ mb: 3 }}>
+                    Veuillez d'abord charger un plan PDF pour utiliser cette fonctionnalité.
                   </Alert>
                 )}
                 
@@ -421,7 +574,7 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
                           <Typography variant="subtitle1">
                             Détails et recommandations
                           </Typography>
-                          {showDetails ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                          {showDetails ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                         </Box>
                         
                         <Collapse in={showDetails}>
@@ -491,7 +644,7 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
                     color="primary"
                     startIcon={<VisibilityIcon />}
                     onClick={optimizeCameras}
-                    disabled={isLoading}
+                    disabled={isLoading || cameras.length === 0}
                     sx={{ mt: 2 }}
                   >
                     Optimiser automatiquement
@@ -501,6 +654,18 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
                 {error && (
                   <Alert severity="error" sx={{ mb: 3 }}>
                     {error}
+                  </Alert>
+                )}
+                
+                {!pdfFile && (
+                  <Alert severity="warning" sx={{ mb: 3 }}>
+                    Veuillez d'abord charger un plan PDF pour utiliser cette fonctionnalité.
+                  </Alert>
+                )}
+                
+                {cameras.length === 0 && pdfFile && (
+                  <Alert severity="info" sx={{ mb: 3 }}>
+                    Aucune caméra à optimiser. Veuillez d'abord ajouter des caméras ou utiliser l'onglet "Générer des caméras".
                   </Alert>
                 )}
                 
@@ -581,7 +746,7 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
                   <TextField
                     fullWidth
                     label="Instructions pour la génération"
-                    placeholder="Ex: Générer des caméras pour un bâtiment de bureaux avec priorité sur les entrées et les zones communes"
+                    placeholder="Ex: Générer 5 caméras pour un bâtiment de bureaux avec priorité sur les entrées"
                     variant="outlined"
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
@@ -595,7 +760,7 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
                     color="primary"
                     startIcon={<CameraIcon />}
                     onClick={generateCameras}
-                    disabled={isLoading}
+                    disabled={isLoading || !pdfFile}
                     sx={{ mt: 2 }}
                   >
                     Générer des caméras
@@ -605,6 +770,18 @@ const AITools: React.FC<AIToolsProps> = ({ onClose, open }) => {
                 {error && (
                   <Alert severity="error" sx={{ mb: 3 }}>
                     {error}
+                  </Alert>
+                )}
+                
+                {!pdfFile && (
+                  <Alert severity="warning" sx={{ mb: 3 }}>
+                    Veuillez d'abord charger un plan PDF pour utiliser cette fonctionnalité.
+                  </Alert>
+                )}
+                
+                {cameras.length > 0 && pdfFile && (
+                  <Alert severity="info" sx={{ mb: 3 }}>
+                    Il y a déjà {cameras.length} caméras sur ce plan. La génération ajoutera de nouvelles caméras ou remplacera les existantes selon vos instructions.
                   </Alert>
                 )}
                 

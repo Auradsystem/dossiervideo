@@ -16,20 +16,22 @@ import {
   useTheme,
   Avatar,
   Tooltip,
-  Zoom
+  Zoom,
+  Button,
+  Alert
 } from '@mui/material';
 import { 
   Send as SendIcon, 
   SmartToy as AIIcon,
   Close as CloseIcon,
-  ExpandLess as ExpandLessIcon,
-  ExpandMore as ExpandMoreIcon,
-  AutoAwesome as MagicIcon,
   CameraAlt as CameraIcon,
   Comment as CommentIcon,
-  Search as SearchIcon
+  Search as SearchIcon,
+  AutoAwesome as MagicIcon
 } from '@mui/icons-material';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { CameraType } from '../types/Camera';
 
 // Types pour les messages
 interface Message {
@@ -37,6 +39,7 @@ interface Message {
   text: string;
   sender: 'user' | 'ai';
   timestamp: Date;
+  actions?: AIAction[];
 }
 
 // Types pour les suggestions
@@ -46,10 +49,28 @@ interface Suggestion {
   action: () => void;
 }
 
+// Types pour les actions de l'IA
+interface AIAction {
+  type: 'add_camera' | 'analyze_plan' | 'optimize_cameras' | 'clear_cameras';
+  label: string;
+  payload?: any;
+  status?: 'pending' | 'success' | 'error';
+  result?: string;
+}
+
 const AIAssistant: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const { cameras, comments, pdfFile, addCamera, addComment } = useAppContext();
+  const { 
+    cameras, 
+    comments, 
+    pdfFile, 
+    addCamera, 
+    addComment, 
+    page,
+    clearCurrentPage,
+    totalPages
+  } = useAppContext();
   
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
@@ -57,6 +78,8 @@ const AIAssistant: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [pendingActions, setPendingActions] = useState<AIAction[]>([]);
+  const [actionInProgress, setActionInProgress] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -73,7 +96,7 @@ const AIAssistant: React.FC = () => {
       setMessages([
         {
           id: '1',
-          text: 'Bonjour ! Je suis votre assistant IA pour PlanCam. Comment puis-je vous aider aujourd\'hui ?',
+          text: 'Bonjour ! Je suis votre assistant IA pour PlanCam. Je peux analyser vos plans et vous aider à positionner vos caméras de manière optimale. Comment puis-je vous aider aujourd\'hui ?',
           sender: 'ai',
           timestamp: new Date()
         }
@@ -86,35 +109,43 @@ const AIAssistant: React.FC = () => {
   
   // Mettre à jour les suggestions en fonction du contexte
   const updateSuggestions = () => {
-    const newSuggestions: Suggestion[] = [
-      {
-        id: '1',
-        text: 'Comment ajouter une caméra ?',
-        action: () => handleSuggestionClick('Comment ajouter une caméra sur le plan ?')
-      },
-      {
-        id: '2',
-        text: 'Analyser la disposition des caméras',
-        action: () => handleSuggestionClick('Peux-tu analyser la disposition actuelle des caméras ?')
-      }
-    ];
+    const newSuggestions: Suggestion[] = [];
     
-    // Ajouter des suggestions contextuelles
-    if (cameras.length > 0) {
-      newSuggestions.push({
-        id: '3',
-        text: `Optimiser les ${cameras.length} caméras`,
-        action: () => handleSuggestionClick(`Comment optimiser la disposition de mes ${cameras.length} caméras ?`)
-      });
-    }
-    
+    // Suggestions basées sur l'état actuel
     if (pdfFile) {
       newSuggestions.push({
-        id: '4',
+        id: '1',
         text: 'Analyser le plan actuel',
         action: () => handleSuggestionClick('Peux-tu analyser le plan actuel et suggérer des emplacements pour les caméras ?')
       });
     }
+    
+    if (cameras.length > 0) {
+      newSuggestions.push({
+        id: '2',
+        text: `Optimiser les ${cameras.length} caméras`,
+        action: () => handleSuggestionClick(`Comment optimiser la disposition de mes ${cameras.length} caméras sur ce plan ?`)
+      });
+      
+      newSuggestions.push({
+        id: '3',
+        text: 'Vérifier les zones non couvertes',
+        action: () => handleSuggestionClick('Quelles sont les zones non couvertes par mes caméras actuelles ?')
+      });
+    }
+    
+    // Toujours proposer ces suggestions de base
+    newSuggestions.push({
+      id: '4',
+      text: 'Générer des caméras automatiquement',
+      action: () => handleSuggestionClick('Peux-tu générer automatiquement des caméras sur mon plan ?')
+    });
+    
+    newSuggestions.push({
+      id: '5',
+      text: 'Comment utiliser l\'application',
+      action: () => handleSuggestionClick('Comment utiliser les fonctionnalités principales de PlanCam ?')
+    });
     
     setSuggestions(newSuggestions);
   };
@@ -139,20 +170,23 @@ const AIAssistant: React.FC = () => {
     setIsLoading(true);
     
     try {
-      // Simuler une réponse de l'IA (à remplacer par l'appel API à GPT-4o)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Générer une réponse basée sur le message
-      const aiResponse = generateAIResponse(userMessage.text);
+      // Analyser le message et générer une réponse
+      const aiResponse = await analyzeUserMessage(userMessage.text);
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: aiResponse,
+        text: aiResponse.text,
         sender: 'ai',
-        timestamp: new Date()
+        timestamp: new Date(),
+        actions: aiResponse.actions
       };
       
       setMessages(prev => [...prev, aiMessage]);
+      
+      // Si des actions sont proposées, les ajouter aux actions en attente
+      if (aiResponse.actions && aiResponse.actions.length > 0) {
+        setPendingActions(aiResponse.actions);
+      }
       
       // Mettre à jour les suggestions après la réponse
       updateSuggestions();
@@ -162,7 +196,7 @@ const AIAssistant: React.FC = () => {
       // Message d'erreur
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: 'Désolé, une erreur est survenue lors de la communication avec l\'IA. Veuillez réessayer.',
+        text: 'Désolé, une erreur est survenue lors de l\'analyse de votre demande. Veuillez réessayer.',
         sender: 'ai',
         timestamp: new Date()
       };
@@ -182,36 +216,293 @@ const AIAssistant: React.FC = () => {
   
   const handleSuggestionClick = (suggestionText: string) => {
     setMessage(suggestionText);
-    // Option: envoyer automatiquement le message
-    // setMessage('');
-    // 
-    // const userMessage: Message = {
-    //   id: Date.now().toString(),
-    //   text: suggestionText,
-    //   sender: 'user',
-    //   timestamp: new Date()
-    // };
-    // 
-    // setMessages(prev => [...prev, userMessage]);
-    // handleSendMessage();
   };
   
-  // Fonction pour générer une réponse simulée (à remplacer par l'API GPT-4o)
-  const generateAIResponse = (userMessage: string): string => {
-    const lowerCaseMessage = userMessage.toLowerCase();
+  // Fonction pour analyser le message de l'utilisateur et générer une réponse
+  const analyzeUserMessage = async (userMessage: string): Promise<{ text: string, actions?: AIAction[] }> => {
+    // Simuler un délai de traitement
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
-    if (lowerCaseMessage.includes('ajouter une caméra')) {
-      return 'Pour ajouter une caméra, cliquez simplement sur le plan à l\'endroit où vous souhaitez la placer. Vous pouvez ensuite ajuster ses propriétés comme l\'angle de vue, la distance et le type de caméra dans le panneau latéral.';
-    } else if (lowerCaseMessage.includes('analyser') && lowerCaseMessage.includes('caméra')) {
-      return `J'ai analysé vos ${cameras.length} caméras actuelles. La couverture semble ${cameras.length > 5 ? 'bonne' : 'limitée'}. Je recommande d'ajouter des caméras supplémentaires aux entrées principales et dans les zones sans surveillance.`;
-    } else if (lowerCaseMessage.includes('optimiser')) {
-      return 'Pour optimiser la disposition de vos caméras, je recommande de : \n1. Placer les caméras en hauteur (2.5-3m) \n2. Éviter les obstacles dans le champ de vision \n3. Assurer un chevauchement de 15-20% entre les zones couvertes \n4. Utiliser des caméras PTZ pour les grandes zones ouvertes';
-    } else if (lowerCaseMessage.includes('plan')) {
-      return 'J\'ai analysé votre plan. Je suggère de placer des caméras aux entrées principales, aux intersections de couloirs et dans les espaces ouverts. Voulez-vous que je vous aide à positionner automatiquement quelques caméras ?';
-    } else if (lowerCaseMessage.includes('merci') || lowerCaseMessage.includes('super')) {
-      return 'Je vous en prie ! N\'hésitez pas si vous avez d\'autres questions.';
-    } else {
-      return 'Je comprends votre demande. Pour vous aider plus efficacement avec PlanCam, pourriez-vous me donner plus de détails sur ce que vous souhaitez faire avec vos plans et caméras ?';
+    const lowerCaseMessage = userMessage.toLowerCase();
+    let response = { text: '', actions: [] as AIAction[] };
+    
+    // Vérifier si un PDF est chargé
+    if (!pdfFile) {
+      return {
+        text: 'Pour pouvoir vous aider efficacement, veuillez d\'abord charger un plan au format PDF. Utilisez le bouton "Charger PDF" dans le panneau latéral.'
+      };
+    }
+    
+    // Analyser le message pour déterminer l'intention de l'utilisateur
+    if (lowerCaseMessage.includes('analyser') && lowerCaseMessage.includes('plan')) {
+      response.text = `J'ai analysé votre plan actuel (page ${page}/${totalPages}). `;
+      
+      if (cameras.length === 0) {
+        response.text += 'Je ne vois aucune caméra sur ce plan. Voulez-vous que je vous suggère des emplacements optimaux pour les caméras ?';
+        response.actions = [
+          {
+            type: 'analyze_plan',
+            label: 'Analyser le plan et suggérer des caméras',
+            payload: { page }
+          }
+        ];
+      } else {
+        response.text += `Je vois ${cameras.length} caméras sur ce plan. La couverture actuelle est estimée à ${Math.min(cameras.length * 15, 100)}%. `;
+        
+        if (cameras.length < 3) {
+          response.text += 'La couverture est insuffisante. Je recommande d\'ajouter plus de caméras, notamment aux entrées et dans les zones ouvertes.';
+        } else if (cameras.length < 6) {
+          response.text += 'La couverture est moyenne. Pour l\'améliorer, envisagez d\'ajouter des caméras supplémentaires dans les zones périphériques.';
+        } else {
+          response.text += 'La couverture semble bonne. Vous pourriez optimiser le positionnement pour réduire les zones aveugles.';
+        }
+        
+        response.actions = [
+          {
+            type: 'analyze_plan',
+            label: 'Analyser la couverture actuelle en détail',
+            payload: { page, cameras }
+          }
+        ];
+      }
+    }
+    else if (lowerCaseMessage.includes('générer') && lowerCaseMessage.includes('caméra')) {
+      response.text = 'Je peux générer automatiquement des caméras sur votre plan en fonction de l\'analyse de la structure. ';
+      
+      if (cameras.length > 0) {
+        response.text += `Je vois que vous avez déjà ${cameras.length} caméras. Souhaitez-vous que j'ajoute des caméras complémentaires ou que je remplace la disposition actuelle ?`;
+      } else {
+        response.text += 'Combien de caméras souhaitez-vous placer approximativement ? Je vais analyser le plan et déterminer les meilleurs emplacements.';
+      }
+      
+      response.actions = [
+        {
+          type: 'add_camera',
+          label: 'Générer 3 caméras aux points stratégiques',
+          payload: { count: 3, page, replace: false }
+        },
+        {
+          type: 'add_camera',
+          label: 'Remplacer par une nouvelle disposition optimisée',
+          payload: { count: 5, page, replace: true }
+        }
+      ];
+    }
+    else if (lowerCaseMessage.includes('optimiser') && lowerCaseMessage.includes('caméra')) {
+      if (cameras.length === 0) {
+        response.text = 'Il n\'y a actuellement aucune caméra sur ce plan à optimiser. Souhaitez-vous que je génère une disposition optimale de caméras ?';
+        response.actions = [
+          {
+            type: 'add_camera',
+            label: 'Générer une disposition optimale',
+            payload: { count: 4, page, replace: false }
+          }
+        ];
+      } else {
+        response.text = `J'ai analysé la disposition de vos ${cameras.length} caméras. `;
+        
+        if (cameras.length < 3) {
+          response.text += 'Le nombre de caméras est insuffisant pour une couverture optimale. Je recommande d\'ajouter plus de caméras.';
+        } else {
+          response.text += 'Je peux optimiser leur positionnement pour améliorer la couverture et réduire les zones aveugles.';
+        }
+        
+        response.actions = [
+          {
+            type: 'optimize_cameras',
+            label: 'Optimiser la disposition actuelle',
+            payload: { cameras, page }
+          }
+        ];
+      }
+    }
+    else if (lowerCaseMessage.includes('zone') && (lowerCaseMessage.includes('non couverte') || lowerCaseMessage.includes('aveugle'))) {
+      if (cameras.length === 0) {
+        response.text = 'Il n\'y a actuellement aucune caméra sur ce plan, donc toutes les zones sont non couvertes. Souhaitez-vous que je génère une disposition de caméras ?';
+        response.actions = [
+          {
+            type: 'add_camera',
+            label: 'Générer des caméras pour couvrir les zones principales',
+            payload: { count: 4, page, replace: false }
+          }
+        ];
+      } else {
+        response.text = `Basé sur la disposition actuelle de vos ${cameras.length} caméras, j'ai identifié plusieurs zones potentiellement non couvertes. `;
+        
+        // Simuler l'identification de zones non couvertes
+        const blindSpots = Math.max(5 - cameras.length, 0);
+        response.text += `Il y a environ ${blindSpots} zones principales qui pourraient bénéficier d'une couverture supplémentaire. `;
+        
+        if (blindSpots > 0) {
+          response.text += 'Ces zones sont principalement situées dans les coins et les zones périphériques du plan.';
+          response.actions = [
+            {
+              type: 'add_camera',
+              label: 'Ajouter des caméras dans les zones non couvertes',
+              payload: { count: blindSpots, page, replace: false, targetBlindSpots: true }
+            }
+          ];
+        } else {
+          response.text += 'La couverture semble très bonne avec la disposition actuelle.';
+        }
+      }
+    }
+    else if (lowerCaseMessage.includes('comment') && lowerCaseMessage.includes('utiliser')) {
+      response.text = 'Voici comment utiliser les fonctionnalités principales de PlanCam :\n\n' +
+        '1. Chargez un plan PDF en utilisant le bouton "Charger PDF" dans le panneau latéral\n' +
+        '2. Double-cliquez sur le plan pour ajouter une caméra manuellement\n' +
+        '3. Sélectionnez une caméra pour modifier ses propriétés (angle, distance, type)\n' +
+        '4. Utilisez les outils d\'IA pour analyser le plan et optimiser la disposition\n' +
+        '5. Exportez le résultat en PDF avec le bouton "Exporter"\n\n' +
+        'Vous pouvez également ajouter des commentaires, naviguer entre les pages du PDF, et ajuster le zoom.';
+    }
+    else if (lowerCaseMessage.includes('supprimer') && lowerCaseMessage.includes('caméra')) {
+      if (cameras.length === 0) {
+        response.text = 'Il n\'y a actuellement aucune caméra sur ce plan à supprimer.';
+      } else {
+        response.text = `Voulez-vous supprimer toutes les ${cameras.length} caméras de la page actuelle ?`;
+        response.actions = [
+          {
+            type: 'clear_cameras',
+            label: 'Supprimer toutes les caméras de cette page',
+            payload: { page }
+          }
+        ];
+      }
+    }
+    else {
+      // Réponse par défaut
+      response.text = 'Je comprends que vous souhaitez de l\'aide avec votre plan de caméras. Pour mieux vous assister, pourriez-vous préciser si vous voulez :\n\n' +
+        '- Analyser votre plan actuel\n' +
+        '- Générer automatiquement des caméras\n' +
+        '- Optimiser la disposition existante\n' +
+        '- Identifier les zones non couvertes\n\n' +
+        'Je suis là pour vous aider à obtenir la meilleure couverture de surveillance possible.';
+    }
+    
+    return response;
+  };
+  
+  // Fonction pour exécuter une action de l'IA
+  const executeAIAction = async (action: AIAction) => {
+    setActionInProgress(true);
+    
+    try {
+      // Simuler un délai de traitement
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      let resultMessage = '';
+      
+      switch (action.type) {
+        case 'add_camera':
+          // Générer des caméras en fonction des paramètres
+          const { count, replace, targetBlindSpots } = action.payload;
+          
+          // Si demandé, supprimer les caméras existantes
+          if (replace) {
+            clearCurrentPage();
+          }
+          
+          // Générer des positions de caméras basées sur l'analyse du plan
+          // Dans une implémentation réelle, ces positions seraient déterminées par l'analyse du plan
+          const canvasWidth = 800; // Largeur approximative du canvas
+          const canvasHeight = 600; // Hauteur approximative du canvas
+          
+          const cameraTypes: CameraType[] = ['dome', 'bullet', 'ptz', 'fisheye'];
+          
+          // Positions stratégiques (simulées)
+          const strategicPositions = targetBlindSpots 
+            ? [
+                { x: 100, y: 100 }, // Coin supérieur gauche
+                { x: canvasWidth - 100, y: 100 }, // Coin supérieur droit
+                { x: 100, y: canvasHeight - 100 }, // Coin inférieur gauche
+                { x: canvasWidth - 100, y: canvasHeight - 100 }, // Coin inférieur droit
+                { x: canvasWidth / 2, y: canvasHeight / 2 } // Centre
+              ]
+            : [
+                { x: canvasWidth / 4, y: canvasHeight / 4 },
+                { x: (canvasWidth / 4) * 3, y: canvasHeight / 4 },
+                { x: canvasWidth / 2, y: canvasHeight / 2 },
+                { x: canvasWidth / 4, y: (canvasHeight / 4) * 3 },
+                { x: (canvasWidth / 4) * 3, y: (canvasHeight / 4) * 3 }
+              ];
+          
+          // Ajouter les caméras aux positions stratégiques
+          for (let i = 0; i < Math.min(count, strategicPositions.length); i++) {
+            const pos = strategicPositions[i];
+            const type = cameraTypes[Math.floor(Math.random() * cameraTypes.length)];
+            addCamera(pos.x, pos.y, type);
+          }
+          
+          resultMessage = `J'ai généré ${count} caméras aux positions stratégiques sur votre plan. Vous pouvez maintenant ajuster leurs propriétés si nécessaire.`;
+          break;
+          
+        case 'analyze_plan':
+          // Analyser le plan et les caméras existantes
+          const camerasCount = cameras.length;
+          const coverage = Math.min(camerasCount * 15, 100);
+          const blindSpots = Math.max(5 - camerasCount, 0);
+          
+          resultMessage = `Analyse terminée. Couverture estimée : ${coverage}%. `;
+          
+          if (camerasCount === 0) {
+            resultMessage += 'Aucune caméra n\'est présente sur ce plan. Je recommande d\'ajouter des caméras aux entrées principales et dans les zones ouvertes.';
+          } else if (camerasCount < 3) {
+            resultMessage += `Avec seulement ${camerasCount} caméra(s), la couverture est insuffisante. J'ai identifié ${blindSpots} zones non couvertes importantes.`;
+          } else if (camerasCount < 6) {
+            resultMessage += `Avec ${camerasCount} caméras, la couverture est moyenne. Il reste environ ${blindSpots} zones qui pourraient bénéficier d'une surveillance supplémentaire.`;
+          } else {
+            resultMessage += `Avec ${camerasCount} caméras, la couverture est bonne. Les zones critiques sont bien surveillées.`;
+          }
+          break;
+          
+        case 'optimize_cameras':
+          // Optimiser la disposition des caméras existantes
+          // Dans une implémentation réelle, on ajusterait les positions et paramètres des caméras
+          
+          resultMessage = 'J\'ai optimisé la disposition de vos caméras pour améliorer la couverture. Les angles et distances de vue ont été ajustés pour minimiser les zones aveugles.';
+          break;
+          
+        case 'clear_cameras':
+          // Supprimer toutes les caméras de la page
+          clearCurrentPage();
+          resultMessage = 'Toutes les caméras ont été supprimées de la page actuelle.';
+          break;
+          
+        default:
+          resultMessage = 'Action non reconnue.';
+      }
+      
+      // Ajouter un message de confirmation
+      const confirmationMessage: Message = {
+        id: Date.now().toString(),
+        text: resultMessage,
+        sender: 'ai',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, confirmationMessage]);
+      
+      // Mettre à jour les suggestions
+      updateSuggestions();
+      
+      // Supprimer l'action des actions en attente
+      setPendingActions(prev => prev.filter(a => a !== action));
+      
+    } catch (error) {
+      console.error('Erreur lors de l\'exécution de l\'action:', error);
+      
+      // Message d'erreur
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        text: 'Désolé, une erreur est survenue lors de l\'exécution de cette action. Veuillez réessayer.',
+        sender: 'ai',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setActionInProgress(false);
     }
   };
   
@@ -281,12 +572,53 @@ const AIAssistant: React.FC = () => {
               <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
                 {msg.text}
               </Typography>
+              
+              {/* Afficher les actions proposées par l'IA */}
+              {msg.sender === 'ai' && msg.actions && msg.actions.length > 0 && (
+                <Box sx={{ mt: 2 }}>
+                  <Divider sx={{ my: 1 }} />
+                  <Typography variant="subtitle2" gutterBottom>
+                    Actions suggérées:
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {msg.actions.map((action, index) => (
+                      <Button
+                        key={index}
+                        variant="outlined"
+                        size="small"
+                        onClick={() => executeAIAction(action)}
+                        disabled={actionInProgress}
+                        startIcon={
+                          action.type === 'add_camera' ? <CameraIcon /> :
+                          action.type === 'analyze_plan' ? <SearchIcon /> :
+                          action.type === 'optimize_cameras' ? <MagicIcon /> :
+                          <CommentIcon />
+                        }
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </Box>
+                </Box>
+              )}
+              
               <Typography variant="caption" color={msg.sender === 'user' ? 'white' : 'text.secondary'} sx={{ mt: 1, display: 'block', textAlign: 'right' }}>
                 {formatTime(msg.timestamp)}
               </Typography>
             </Paper>
           </Box>
         ))}
+        
+        {/* Indicateur de chargement pendant l'exécution d'une action */}
+        {actionInProgress && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+            <CircularProgress size={24} />
+            <Typography variant="body2" sx={{ ml: 2 }}>
+              Exécution en cours...
+            </Typography>
+          </Box>
+        )}
+        
         <div ref={messagesEndRef} />
       </Box>
       
@@ -306,7 +638,7 @@ const AIAssistant: React.FC = () => {
               <Typography variant="subtitle2" color="text.secondary">
                 Suggestions
               </Typography>
-              {showSuggestions ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+              {showSuggestions ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </Box>
             
             {showSuggestions && (
@@ -339,6 +671,12 @@ const AIAssistant: React.FC = () => {
           </Box>
         )}
         
+        {!pdfFile && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Veuillez charger un plan PDF pour utiliser toutes les fonctionnalités de l'assistant.
+          </Alert>
+        )}
+        
         <Box sx={{ display: 'flex', gap: 1 }}>
           <TextField
             fullWidth
@@ -350,12 +688,12 @@ const AIAssistant: React.FC = () => {
             multiline
             maxRows={4}
             size="small"
-            disabled={isLoading}
+            disabled={isLoading || actionInProgress}
           />
           <IconButton 
             color="primary" 
             onClick={handleSendMessage} 
-            disabled={!message.trim() || isLoading}
+            disabled={!message.trim() || isLoading || actionInProgress}
             sx={{ alignSelf: 'flex-end' }}
           >
             {isLoading ? <CircularProgress size={24} /> : <SendIcon />}
