@@ -10,65 +10,46 @@ app.use(cors());
 app.use(express.json());
 
 // Configuration Supabase
-const supabaseUrl = 'https://kvoezelnkzfvyikicjyr.supabase.co';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2b2V6ZWxua3pmdnlpa2ljanlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE4MDkwMzIsImV4cCI6MjA1NzM4NTAzMn0.Hf3ohn_zlFRQG8kAiVm58Ng4EGkV2HLTXlpwkkp_CiM';
+const SUPABASE_URL = 'https://kvoezelnkzfvyikicjyr.supabase.co';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'votre_clé_de_service_supabase';
 
-// Créer le client Supabase
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+// Créer le client Supabase avec la clé de service
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 // Route pour vérifier si le serveur fonctionne
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Serveur PlanCam opérationnel' });
 });
 
-// Route pour récupérer tous les utilisateurs
+// Route pour récupérer tous les utilisateurs (nécessite la clé de service)
 app.get('/api/users', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.auth.admin.listUsers();
     
     if (error) throw error;
     
-    res.json(data);
+    res.json(data.users);
   } catch (error) {
     console.error('Erreur lors de la récupération des utilisateurs:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Route pour créer un utilisateur
+// Route pour créer un utilisateur (nécessite la clé de service)
 app.post('/api/users', async (req, res) => {
   try {
-    const { username, password, isAdmin } = req.body;
+    const { email, password, isAdmin } = req.body;
     
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Le nom d\'utilisateur et le mot de passe sont requis' });
+    if (!email || !password) {
+      return res.status(400).json({ error: 'L\'email et le mot de passe sont requis' });
     }
     
-    // Vérifier si l'utilisateur existe déjà
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('username', username)
-      .single();
-    
-    if (existingUser) {
-      return res.status(409).json({ error: 'Ce nom d\'utilisateur existe déjà' });
-    }
-    
-    // Créer l'utilisateur
-    const { data, error } = await supabase
-      .from('users')
-      .insert([{
-        username,
-        password, // Note: Dans une vraie application, le mot de passe devrait être haché
-        is_admin: isAdmin || false,
-        created_at: new Date().toISOString()
-      }])
-      .select()
-      .single();
+    const { data, error } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { is_admin: isAdmin || false }
+    });
     
     if (error) throw error;
     
@@ -79,25 +60,33 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// Route pour mettre à jour un utilisateur
+// Route pour mettre à jour un utilisateur (nécessite la clé de service)
 app.put('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, password, isAdmin } = req.body;
+    const { email, password, isAdmin } = req.body;
     
-    const updates = {};
-    if (username !== undefined) updates.username = username;
-    if (password !== undefined && password !== '') updates.password = password;
-    if (isAdmin !== undefined) updates.is_admin = isAdmin;
+    const updates: any = {};
     
-    const { data, error } = await supabase
-      .from('users')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    if (email) updates.email = email;
+    if (password) updates.password = password;
+    
+    const { data, error } = await supabase.auth.admin.updateUserById(
+      id,
+      updates
+    );
     
     if (error) throw error;
+    
+    // Mettre à jour les métadonnées si isAdmin est défini
+    if (isAdmin !== undefined) {
+      const { error: metadataError } = await supabase.auth.admin.updateUserById(
+        id,
+        { user_metadata: { is_admin: isAdmin } }
+      );
+      
+      if (metadataError) throw metadataError;
+    }
     
     res.json(data);
   } catch (error) {
@@ -106,75 +95,18 @@ app.put('/api/users/:id', async (req, res) => {
   }
 });
 
-// Route pour supprimer un utilisateur
+// Route pour supprimer un utilisateur (nécessite la clé de service)
 app.delete('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Vérifier si c'est l'admin principal
-    const { data: user } = await supabase
-      .from('users')
-      .select('username')
-      .eq('id', id)
-      .single();
-    
-    if (user && user.username === 'Dali') {
-      return res.status(403).json({ error: 'Impossible de supprimer l\'administrateur principal' });
-    }
-    
-    const { error } = await supabase
-      .from('users')
-      .delete()
-      .eq('id', id);
+    const { error } = await supabase.auth.admin.deleteUser(id);
     
     if (error) throw error;
     
     res.json({ success: true });
   } catch (error) {
     console.error('Erreur lors de la suppression d\'un utilisateur:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Route pour l'authentification
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Le nom d\'utilisateur et le mot de passe sont requis' });
-    }
-    
-    // Rechercher l'utilisateur
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('username', username)
-      .eq('password', password)
-      .single();
-    
-    if (error || !user) {
-      return res.status(401).json({ error: 'Identifiants incorrects' });
-    }
-    
-    // Mettre à jour la date de dernière connexion
-    await supabase
-      .from('users')
-      .update({ last_login: new Date().toISOString() })
-      .eq('id', user.id);
-    
-    // Convertir les champs pour correspondre au format de l'application
-    const appUser = {
-      id: user.id,
-      username: user.username,
-      isAdmin: user.is_admin,
-      createdAt: user.created_at,
-      lastLogin: user.last_login
-    };
-    
-    res.json({ user: appUser });
-  } catch (error) {
-    console.error('Erreur lors de l\'authentification:', error);
     res.status(500).json({ error: error.message });
   }
 });

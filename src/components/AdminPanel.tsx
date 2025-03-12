@@ -22,43 +22,91 @@ import {
   Alert,
   CircularProgress,
   Tooltip,
-  Divider
+  Divider,
+  Tab,
+  Tabs
 } from '@mui/material';
-import { Delete as DeleteIcon, Edit as EditIcon, Sync as SyncIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon, Edit as EditIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
-import { User } from '../types/User';
+import { supabase } from '../lib/supabase';
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`admin-tabpanel-${index}`}
+      aria-labelledby={`admin-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ p: 3 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
 
 const AdminPanel: React.FC = () => {
   const { 
-    users, 
-    addUser, 
-    updateUser, 
-    deleteUser, 
+    register,
     currentUser, 
-    syncWithCloud,
-    isSyncing,
-    lastSyncTime,
-    syncError
+    isSyncing
   } = useAppContext();
   
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [tabValue, setTabValue] = useState(0);
+  const [users, setUsers] = useState<any[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+  // Charger les utilisateurs
+  const loadUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const { data, error } = await supabase.auth.admin.listUsers();
+      
+      if (error) throw error;
+      
+      if (data) {
+        setUsers(data.users);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement des utilisateurs:', error);
+      setError('Impossible de charger la liste des utilisateurs');
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  // Charger les utilisateurs au montage
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  // Gérer le changement d'onglet
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
 
   // Réinitialiser le formulaire
   const resetForm = () => {
-    setUsername('');
+    setEmail('');
     setPassword('');
     setIsAdmin(false);
-    setEditingUser(null);
-    setIsEditing(false);
   };
 
   // Gérer la soumission du formulaire
@@ -69,295 +117,207 @@ const AdminPanel: React.FC = () => {
     setIsLoading(true);
     
     try {
-      if (!username) {
-        setError('Le nom d\'utilisateur est requis');
+      if (!email) {
+        setError('L\'email est requis');
         setIsLoading(false);
         return;
       }
       
-      if (!isEditing && !password) {
+      if (!password) {
         setError('Le mot de passe est requis');
         setIsLoading(false);
         return;
       }
       
-      // Vérifier si le nom d'utilisateur existe déjà (sauf pour l'édition)
-      if (!isEditing && users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
-        setError('Ce nom d\'utilisateur existe déjà');
-        setIsLoading(false);
-        return;
-      }
+      // Créer un nouvel utilisateur
+      const success = await register(email, password, isAdmin);
       
-      if (isEditing && editingUser) {
-        // Mettre à jour l'utilisateur existant
-        const updates: Partial<User> = { 
-          username,
-          isAdmin
-        };
+      if (success) {
+        setSuccess(`L'utilisateur ${email} a été créé`);
+        resetForm();
         
-        // Ne mettre à jour le mot de passe que s'il a été modifié
-        if (password) {
-          updates.password = password;
-        }
-        
-        await updateUser(editingUser.id, updates);
-        setSuccess(`L'utilisateur ${username} a été mis à jour`);
+        // Recharger la liste des utilisateurs
+        await loadUsers();
       } else {
-        // Créer un nouvel utilisateur
-        await addUser(username, password, isAdmin);
-        setSuccess(`L'utilisateur ${username} a été créé`);
+        setError('Erreur lors de la création de l\'utilisateur');
       }
-      
-      // Réinitialiser le formulaire
-      resetForm();
     } catch (error) {
-      console.error('Erreur lors de la gestion de l\'utilisateur:', error);
+      console.error('Erreur lors de la création de l\'utilisateur:', error);
       setError(error instanceof Error ? error.message : 'Une erreur est survenue');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Gérer l'édition d'un utilisateur
-  const handleEdit = (user: User) => {
-    setEditingUser(user);
-    setUsername(user.username);
-    setPassword(''); // Ne pas afficher le mot de passe actuel
-    setIsAdmin(user.isAdmin);
-    setIsEditing(true);
-    setError(null);
-    setSuccess(null);
-  };
-
-  // Gérer la suppression d'un utilisateur
-  const handleDeleteClick = (user: User) => {
-    setUserToDelete(user);
-    setDeleteConfirmOpen(true);
-  };
-
-  // Confirmer la suppression
-  const confirmDelete = async () => {
-    if (userToDelete) {
-      setIsLoading(true);
-      try {
-        await deleteUser(userToDelete.id);
-        setSuccess(`L'utilisateur ${userToDelete.username} a été supprimé`);
-      } catch (error) {
-        console.error('Erreur lors de la suppression:', error);
-        setError(error instanceof Error ? error.message : 'Une erreur est survenue lors de la suppression');
-      } finally {
-        setIsLoading(false);
-        setDeleteConfirmOpen(false);
-        setUserToDelete(null);
-      }
-    }
-  };
-
-  // Gérer la synchronisation manuelle
-  const handleSync = async () => {
-    setError(null);
-    setSuccess(null);
-    
-    try {
-      await syncWithCloud();
-      setSuccess('Synchronisation réussie');
-    } catch (error) {
-      console.error('Erreur lors de la synchronisation:', error);
-      setError('Erreur lors de la synchronisation');
-    }
-  };
-
   // Formater la date pour l'affichage
-  const formatDate = (date: Date | undefined) => {
-    if (!date) return 'Jamais';
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'Jamais';
     return new Intl.DateTimeFormat('fr-FR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    }).format(date);
+    }).format(new Date(dateString));
   };
 
   return (
     <Box sx={{ p: 3, maxWidth: '1200px', mx: 'auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" component="h2">
-          Gestion des utilisateurs
-        </Typography>
-        
-        <Button 
-          variant="outlined" 
-          startIcon={<SyncIcon />}
-          onClick={handleSync}
-          disabled={isSyncing}
-        >
-          {isSyncing ? 'Synchronisation...' : 'Synchroniser'}
-        </Button>
+      <Typography variant="h5" component="h2" sx={{ mb: 3 }}>
+        Administration
+      </Typography>
+      
+      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs value={tabValue} onChange={handleTabChange} aria-label="admin tabs">
+          <Tab label="Ajouter un utilisateur" />
+          <Tab label="Gérer les utilisateurs" />
+        </Tabs>
       </Box>
       
-      {syncError && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Erreur de synchronisation: {syncError}
-        </Alert>
-      )}
-      
-      {lastSyncTime && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Dernière synchronisation: {formatDate(lastSyncTime)}
-        </Typography>
-      )}
-      
-      <Paper sx={{ p: 3, mb: 4 }}>
-        <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
-          {isEditing ? 'Modifier un utilisateur' : 'Ajouter un utilisateur'}
-        </Typography>
-        
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            {success}
-          </Alert>
-        )}
-        
-        <Box component="form" onSubmit={handleSubmit}>
-          <TextField
-            label="Nom d'utilisateur"
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={isLoading}
-          />
+      <TabPanel value={tabValue} index={0}>
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
+            Ajouter un utilisateur
+          </Typography>
           
-          <TextField
-            label={isEditing ? "Nouveau mot de passe (laisser vide pour ne pas changer)" : "Mot de passe"}
-            type="password"
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required={!isEditing}
-            disabled={isLoading}
-          />
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
           
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={isAdmin}
-                onChange={(e) => setIsAdmin(e.target.checked)}
-                disabled={isLoading}
-              />
-            }
-            label="Administrateur"
-            sx={{ mt: 1 }}
-          />
+          {success && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              {success}
+            </Alert>
+          )}
           
-          <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+          <Box component="form" onSubmit={handleSubmit}>
+            <TextField
+              label="Email"
+              type="email"
+              variant="outlined"
+              fullWidth
+              margin="normal"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={isLoading}
+              required
+            />
+            
+            <TextField
+              label="Mot de passe"
+              type="password"
+              variant="outlined"
+              fullWidth
+              margin="normal"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoading}
+              required
+            />
+            
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={isAdmin}
+                  onChange={(e) => setIsAdmin(e.target.checked)}
+                  disabled={isLoading}
+                />
+              }
+              label="Administrateur"
+              sx={{ mt: 1 }}
+            />
+            
             <Button
               type="submit"
               variant="contained"
               disabled={isLoading}
+              sx={{ mt: 2 }}
             >
-              {isLoading ? <CircularProgress size={24} /> : isEditing ? 'Mettre à jour' : 'Ajouter'}
+              {isLoading ? <CircularProgress size={24} /> : 'Ajouter'}
             </Button>
-            
-            {isEditing && (
-              <Button
-                variant="outlined"
-                onClick={resetForm}
-                disabled={isLoading}
-              >
-                Annuler
-              </Button>
-            )}
           </Box>
+        </Paper>
+      </TabPanel>
+      
+      <TabPanel value={tabValue} index={1}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6" component="h3">
+            Liste des utilisateurs
+          </Typography>
+          
+          <Button 
+            variant="outlined" 
+            startIcon={<RefreshIcon />}
+            onClick={loadUsers}
+            disabled={isLoadingUsers}
+          >
+            Actualiser
+          </Button>
         </Box>
-      </Paper>
-      
-      <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
-        Liste des utilisateurs ({users.length})
-      </Typography>
-      
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Nom d'utilisateur</TableCell>
-              <TableCell>Rôle</TableCell>
-              <TableCell>Créé le</TableCell>
-              <TableCell>Dernière connexion</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id} sx={{ 
-                backgroundColor: user.id === currentUser?.id ? 'rgba(25, 118, 210, 0.08)' : 'inherit'
-              }}>
-                <TableCell>{user.username}</TableCell>
-                <TableCell>{user.isAdmin ? 'Administrateur' : 'Utilisateur'}</TableCell>
-                <TableCell>{formatDate(user.createdAt)}</TableCell>
-                <TableCell>{formatDate(user.lastLogin)}</TableCell>
-                <TableCell align="right">
-                  <Tooltip title="Modifier">
-                    <IconButton 
-                      onClick={() => handleEdit(user)}
-                      disabled={isLoading}
-                    >
-                      <EditIcon />
-                    </IconButton>
-                  </Tooltip>
-                  
-                  <Tooltip title="Supprimer">
-                    <span>
-                      <IconButton 
-                        onClick={() => handleDeleteClick(user)}
-                        disabled={
-                          isLoading || 
-                          user.username === 'Dali' || // Empêcher la suppression de l'admin principal
-                          user.id === currentUser?.id // Empêcher la suppression de soi-même
-                        }
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      
-      {/* Dialogue de confirmation de suppression */}
-      <Dialog
-        open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
-      >
-        <DialogTitle>Confirmer la suppression</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Êtes-vous sûr de vouloir supprimer l'utilisateur "{userToDelete?.username}" ?
-            Cette action est irréversible.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)} disabled={isLoading}>
-            Annuler
-          </Button>
-          <Button onClick={confirmDelete} color="error" disabled={isLoading}>
-            {isLoading ? <CircularProgress size={24} /> : 'Supprimer'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        
+        {isLoadingUsers ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Email</TableCell>
+                  <TableCell>Rôle</TableCell>
+                  <TableCell>Créé le</TableCell>
+                  <TableCell>Dernière connexion</TableCell>
+                  <TableCell align="right">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center">
+                      Aucun utilisateur trouvé
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  users.map((user) => (
+                    <TableRow key={user.id} sx={{ 
+                      backgroundColor: user.id === currentUser?.id ? 'rgba(25, 118, 210, 0.08)' : 'inherit'
+                    }}>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>
+                        {user.user_metadata?.is_admin ? 'Administrateur' : 'Utilisateur'}
+                      </TableCell>
+                      <TableCell>{formatDate(user.created_at)}</TableCell>
+                      <TableCell>{formatDate(user.last_sign_in_at)}</TableCell>
+                      <TableCell align="right">
+                        <Tooltip title="Modifier">
+                          <IconButton disabled>
+                            <EditIcon />
+                          </IconButton>
+                        </Tooltip>
+                        
+                        <Tooltip title="Supprimer">
+                          <span>
+                            <IconButton disabled>
+                              <DeleteIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+        
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Note: La gestion complète des utilisateurs nécessite des droits d'administration Supabase.
+        </Typography>
+      </TabPanel>
     </Box>
   );
 };

@@ -1,39 +1,22 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig, loadEnv } from 'vite';
+import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  optimizeDeps: {
-    include: ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
-    esbuildOptions: {
-      // Augmenter la limite de mémoire pour esbuild
-      target: 'es2020',
-      // Désactiver la minification pendant le développement
-      minify: false,
-    }
-  },
-  build: {
-    commonjsOptions: {
-      transformMixedEsModules: true,
+export default defineConfig(({ mode }) => {
+  // Charger les variables d'environnement
+  const env = loadEnv(mode, process.cwd(), '');
+  
+  return {
+    plugins: [react()],
+    define: {
+      // Rendre les variables d'environnement disponibles dans l'application
+      'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.SUPABASE_URL || ''),
+      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.SUPABASE_ANON_KEY || ''),
+      'import.meta.env.VITE_SUPABASE_SERVICE_KEY': JSON.stringify(env.SUPABASE_SERVICE_KEY || '')
     },
-    // Réduire la charge sur esbuild
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        // Réduire l'agressivité de la compression
-        passes: 1
-      }
+    server: {
+      port: 3000,
+      open: true
     }
-  },
-  server: {
-    hmr: {
-      overlay: true,
-    },
-    // Augmenter le timeout pour éviter les arrêts inattendus
-    watch: {
-      usePolling: true,
-      interval: 1000,
-    }
-  },
-})
+  };
+});

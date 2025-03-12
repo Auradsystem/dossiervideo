@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
 import { Comment } from '../types/Comment';
 import { User } from '../types/User';
-import { supabase, supabaseAuth, supabaseUsers, initializeSupabaseUsers, syncUsersWithSupabase } from '../lib/supabase';
+import { supabase, supabaseAuth, initializeDefaultUsers } from '../lib/supabase';
 
 // Interface pour stocker les caméras par page
 interface PageCameras {
@@ -32,7 +32,7 @@ interface AppContextType {
   totalPages: number;
   setTotalPages: (pages: number) => void;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   exportPdf: () => void;
   exportCurrentPage: () => void;
@@ -48,7 +48,7 @@ interface AppContextType {
   selectedIconType: string;
   setSelectedIconType: (type: string) => void;
   clearCurrentPage: () => void;
-  // Nouvelles fonctionnalités pour les commentaires
+  // Fonctionnalités pour les commentaires
   comments: Comment[];
   addComment: (x: number, y: number, text: string, cameraId?: string) => void;
   updateComment: (id: string, updates: Partial<Comment>) => void;
@@ -57,16 +57,12 @@ interface AppContextType {
   setSelectedComment: (id: string | null) => void;
   isAddingComment: boolean;
   setIsAddingComment: (isAdding: boolean) => void;
-  // Nouvelles fonctionnalités pour la gestion des utilisateurs
+  // Fonctionnalités pour la gestion des utilisateurs
   currentUser: User | null;
   isAdmin: boolean;
-  users: User[];
-  addUser: (username: string, password: string, isAdmin: boolean) => Promise<User>;
-  updateUser: (id: string, updates: Partial<User>) => Promise<void>;
-  deleteUser: (id: string) => Promise<void>;
+  register: (email: string, password: string, isAdmin: boolean) => Promise<boolean>;
   isAdminMode: boolean;
   setIsAdminMode: (isAdmin: boolean) => void;
-  syncWithCloud: () => Promise<void>;
   isSyncing: boolean;
   lastSyncTime: Date | null;
   syncError: string | null;
@@ -104,191 +100,6 @@ const safeLocalStorage = {
   }
 };
 
-// Fonction pour sérialiser les dates correctement
-const serializeWithDates = (obj: any): string => {
-  return JSON.stringify(obj, (key, value) => {
-    if (value instanceof Date) {
-      return {
-        __type: 'Date',
-        iso: value.toISOString()
-      };
-    }
-    return value;
-  });
-};
-
-// Fonction pour désérialiser les dates correctement
-const deserializeWithDates = (json: string): any => {
-  return JSON.parse(json, (key, value) => {
-    if (value && typeof value === 'object' && value.__type === 'Date') {
-      return new Date(value.iso);
-    }
-    // Compatibilité avec l'ancien format de date
-    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z$/.test(value)) {
-      return new Date(value);
-    }
-    return value;
-  });
-};
-
-// Clé pour le stockage IndexedDB
-const DB_NAME = 'plancam_db';
-const DB_VERSION = 1;
-const USERS_STORE = 'users';
-const SYNC_STORE = 'sync_data';
-
-// Fonction pour ouvrir la base de données IndexedDB
-const openDatabase = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    
-    request.onerror = (event) => {
-      console.error('Erreur lors de l\'ouverture de la base de données:', event);
-      reject(new Error('Impossible d\'ouvrir la base de données'));
-    };
-    
-    request.onsuccess = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      resolve(db);
-    };
-    
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      
-      // Créer le magasin d'utilisateurs s'il n'existe pas
-      if (!db.objectStoreNames.contains(USERS_STORE)) {
-        const userStore = db.createObjectStore(USERS_STORE, { keyPath: 'id' });
-        userStore.createIndex('username', 'username', { unique: true });
-      }
-      
-      // Créer le magasin de données de synchronisation s'il n'existe pas
-      if (!db.objectStoreNames.contains(SYNC_STORE)) {
-        db.createObjectStore(SYNC_STORE, { keyPath: 'id' });
-      }
-    };
-  });
-};
-
-// Fonction pour lire tous les utilisateurs de la base de données
-const getAllUsers = async (): Promise<User[]> => {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(USERS_STORE, 'readonly');
-      const store = transaction.objectStore(USERS_STORE);
-      const request = store.getAll();
-      
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-      
-      request.onerror = (event) => {
-        console.error('Erreur lors de la lecture des utilisateurs:', event);
-        reject(new Error('Impossible de lire les utilisateurs'));
-      };
-    });
-  } catch (error) {
-    console.error('Erreur lors de l\'accès à la base de données:', error);
-    return [];
-  }
-};
-
-// Fonction pour ajouter ou mettre à jour un utilisateur dans la base de données
-const saveUser = async (user: User): Promise<void> => {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(USERS_STORE, 'readwrite');
-      const store = transaction.objectStore(USERS_STORE);
-      const request = store.put(user);
-      
-      request.onsuccess = () => {
-        resolve();
-      };
-      
-      request.onerror = (event) => {
-        console.error('Erreur lors de la sauvegarde de l\'utilisateur:', event);
-        reject(new Error('Impossible de sauvegarder l\'utilisateur'));
-      };
-    });
-  } catch (error) {
-    console.error('Erreur lors de l\'accès à la base de données:', error);
-    throw error;
-  }
-};
-
-// Fonction pour supprimer un utilisateur de la base de données
-const deleteUserFromDB = async (id: string): Promise<void> => {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(USERS_STORE, 'readwrite');
-      const store = transaction.objectStore(USERS_STORE);
-      const request = store.delete(id);
-      
-      request.onsuccess = () => {
-        resolve();
-      };
-      
-      request.onerror = (event) => {
-        console.error('Erreur lors de la suppression de l\'utilisateur:', event);
-        reject(new Error('Impossible de supprimer l\'utilisateur'));
-      };
-    });
-  } catch (error) {
-    console.error('Erreur lors de l\'accès à la base de données:', error);
-    throw error;
-  }
-};
-
-// Fonction pour sauvegarder les données de synchronisation
-const saveSyncData = async (data: any): Promise<void> => {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(SYNC_STORE, 'readwrite');
-      const store = transaction.objectStore(SYNC_STORE);
-      const request = store.put({ id: 'lastSync', ...data });
-      
-      request.onsuccess = () => {
-        resolve();
-      };
-      
-      request.onerror = (event) => {
-        console.error('Erreur lors de la sauvegarde des données de synchronisation:', event);
-        reject(new Error('Impossible de sauvegarder les données de synchronisation'));
-      };
-    });
-  } catch (error) {
-    console.error('Erreur lors de l\'accès à la base de données:', error);
-    throw error;
-  }
-};
-
-// Fonction pour lire les données de synchronisation
-const getSyncData = async (): Promise<any> => {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(SYNC_STORE, 'readonly');
-      const store = transaction.objectStore(SYNC_STORE);
-      const request = store.get('lastSync');
-      
-      request.onsuccess = () => {
-        resolve(request.result || { timestamp: null });
-      };
-      
-      request.onerror = (event) => {
-        console.error('Erreur lors de la lecture des données de synchronisation:', event);
-        reject(new Error('Impossible de lire les données de synchronisation'));
-      };
-    });
-  } catch (error) {
-    console.error('Erreur lors de l\'accès à la base de données:', error);
-    return { timestamp: null };
-  }
-};
-
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   // Stockage des caméras par page
@@ -304,13 +115,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
   
-  // Nouveaux états pour les commentaires
+  // États pour les commentaires
   const [pageComments, setPageComments] = useState<PageComments>({});
   const [selectedComment, setSelectedComment] = useState<string | null>(null);
   const [isAddingComment, setIsAddingComment] = useState<boolean>(false);
 
-  // Nouveaux états pour la gestion des utilisateurs
-  const [users, setUsers] = useState<User[]>([]);
+  // États pour la gestion des utilisateurs
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
@@ -328,164 +138,57 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Initialiser Supabase au démarrage
   useEffect(() => {
-    const initSupabase = async () => {
+    const initApp = async () => {
       try {
-        // Initialiser les utilisateurs par défaut dans Supabase si nécessaire
-        await initializeSupabaseUsers();
-        console.log('Supabase initialisé avec succès');
+        // Vérifier s'il y a une session active
+        const { session, user, error } = await supabaseAuth.getSession();
+        
+        if (session && user) {
+          setIsAuthenticated(true);
+          setCurrentUser(user);
+          setIsAdmin(user.isAdmin);
+          console.log('Session restaurée:', user);
+        } else {
+          // Initialiser les utilisateurs par défaut si nécessaire
+          await initializeDefaultUsers();
+        }
       } catch (error) {
-        console.error('Erreur lors de l\'initialisation de Supabase:', error);
+        console.error('Erreur lors de l\'initialisation de l\'application:', error);
       }
     };
     
-    initSupabase();
+    initApp();
+    
+    // Écouter les changements d'authentification
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Événement d\'authentification:', event);
+        
+        if (event === 'SIGNED_IN' && session) {
+          // Récupérer les informations utilisateur complètes
+          const { user, error } = await supabaseAuth.getSession();
+          
+          if (user && !error) {
+            setIsAuthenticated(true);
+            setCurrentUser(user);
+            setIsAdmin(user.isAdmin);
+            console.log('Utilisateur connecté:', user);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          setIsAdmin(false);
+          setIsAdminMode(false);
+          console.log('Utilisateur déconnecté');
+        }
+      }
+    );
+    
+    // Nettoyer l'écouteur
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
-
-  // Fonction pour sauvegarder les utilisateurs dans IndexedDB et localStorage
-  const saveUsers = useCallback(async (updatedUsers: User[]) => {
-    if (updatedUsers.length > 0) {
-      try {
-        // Sauvegarder dans IndexedDB
-        for (const user of updatedUsers) {
-          await saveUser(user);
-        }
-        
-        // Sauvegarder aussi dans localStorage pour compatibilité
-        const serialized = serializeWithDates(updatedUsers);
-        const success = safeLocalStorage.setItem('plancam_users', serialized);
-        
-        console.log('Utilisateurs sauvegardés:', { 
-          count: updatedUsers.length,
-          usersList: updatedUsers.map(u => u.username)
-        });
-        
-        return true;
-      } catch (error) {
-        console.error('Erreur lors de la sauvegarde des utilisateurs:', error);
-        return false;
-      }
-    }
-    return false;
-  }, []);
-
-  // Fonction pour synchroniser les utilisateurs avec Supabase
-  const syncWithCloud = useCallback(async () => {
-    if (isSyncing) return;
-    
-    setIsSyncing(true);
-    setSyncError(null);
-    
-    try {
-      console.log('Début de la synchronisation avec Supabase...');
-      
-      // Synchroniser les utilisateurs locaux avec Supabase
-      const updatedUsers = await syncUsersWithSupabase(users);
-      
-      // Mettre à jour l'état local avec les utilisateurs synchronisés
-      setUsers(updatedUsers);
-      
-      // Sauvegarder dans IndexedDB et localStorage
-      await saveUsers(updatedUsers);
-      
-      // Mettre à jour la date de dernière synchronisation
-      const now = new Date();
-      setLastSyncTime(now);
-      await saveSyncData({ timestamp: now.toISOString() });
-      
-      console.log('Synchronisation réussie, utilisateurs mis à jour:', updatedUsers.length);
-    } catch (error) {
-      console.error('Erreur lors de la synchronisation avec Supabase:', error);
-      setSyncError(error instanceof Error ? error.message : 'Erreur inconnue');
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [isSyncing, users, saveUsers]);
-
-  // Initialisation des utilisateurs
-  useEffect(() => {
-    const loadUsers = async () => {
-      try {
-        // Essayer de charger depuis Supabase d'abord
-        const { users: supabaseUsers, error } = await supabaseUsers.getAll();
-        
-        if (!error && supabaseUsers.length > 0) {
-          setUsers(supabaseUsers);
-          console.log('Utilisateurs chargés depuis Supabase:', supabaseUsers);
-          
-          // Sauvegarder dans IndexedDB et localStorage pour l'accès hors ligne
-          await saveUsers(supabaseUsers);
-          return;
-        }
-        
-        // Si Supabase échoue, essayer IndexedDB
-        const dbUsers = await getAllUsers();
-        
-        if (dbUsers && dbUsers.length > 0) {
-          setUsers(dbUsers);
-          console.log('Utilisateurs chargés depuis IndexedDB:', dbUsers);
-          
-          // Synchroniser avec Supabase dès que possible
-          syncWithCloud();
-          return;
-        }
-        
-        // Fallback au localStorage si IndexedDB est vide
-        const storedUsers = safeLocalStorage.getItem('plancam_users');
-        if (storedUsers) {
-          // Utiliser la fonction de désérialisation améliorée
-          const parsedUsers = deserializeWithDates(storedUsers);
-          setUsers(parsedUsers);
-          console.log('Utilisateurs chargés depuis localStorage:', parsedUsers);
-          
-          // Sauvegarder dans IndexedDB et synchroniser avec Supabase
-          await saveUsers(parsedUsers);
-          syncWithCloud();
-          return;
-        }
-        
-        // Si aucune donnée n'est trouvée, initialiser les utilisateurs par défaut
-        initializeDefaultUsers();
-      } catch (error) {
-        console.error('Erreur lors du chargement des utilisateurs:', error);
-        // Réinitialiser si erreur
-        initializeDefaultUsers();
-      }
-    };
-    
-    loadUsers();
-  }, [saveUsers, syncWithCloud]);
-
-  // Fonction pour initialiser les utilisateurs par défaut
-  const initializeDefaultUsers = async () => {
-    // Créer l'utilisateur admin par défaut si aucun utilisateur n'existe
-    const adminUser: User = {
-      id: uuidv4(),
-      username: 'Dali',
-      password: 'Dali',
-      isAdmin: true,
-      createdAt: new Date()
-    };
-    
-    // Ajouter l'utilisateur par défaut (xcel/video)
-    const defaultUser: User = {
-      id: uuidv4(),
-      username: 'xcel',
-      password: 'video',
-      isAdmin: false,
-      createdAt: new Date()
-    };
-    
-    const initialUsers = [adminUser, defaultUser];
-    setUsers(initialUsers);
-    
-    // Sauvegarder localement
-    await saveUsers(initialUsers);
-    
-    // Synchroniser avec Supabase
-    syncWithCloud();
-    
-    console.log('Utilisateurs initialisés:', initialUsers);
-  };
 
   // Journalisation pour le débogage
   useEffect(() => {
@@ -500,24 +203,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSelectedComment(null);
   }, [page]);
 
-  // Check for existing authentication on mount
-  useEffect(() => {
-    const auth = safeLocalStorage.getItem('plancam_auth');
-    if (auth) {
-      try {
-        // Utiliser la fonction de désérialisation améliorée
-        const authData = deserializeWithDates(auth);
-        setIsAuthenticated(true);
-        setCurrentUser(authData.user);
-        setIsAdmin(authData.user.isAdmin);
-        console.log('Authentification restaurée:', authData.user);
-      } catch (error) {
-        console.error('Erreur lors de la récupération de l\'authentification:', error);
-        safeLocalStorage.removeItem('plancam_auth');
-      }
-    }
-  }, []);
-
   // Cleanup preview URL when component unmounts
   useEffect(() => {
     return () => {
@@ -527,289 +212,72 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [previewUrl]);
 
-  // Sauvegarder les utilisateurs dans IndexedDB et localStorage à chaque modification
-  useEffect(() => {
-    if (users.length > 0) {
-      saveUsers(users);
-    }
-  }, [users, saveUsers]);
-
-  // Synchronisation périodique avec Supabase (toutes les 5 minutes)
-  useEffect(() => {
-    if (isAuthenticated) {
-      const syncInterval = setInterval(() => {
-        syncWithCloud().catch(err => {
-          console.warn('Échec de la synchronisation périodique:', err);
-        });
-      }, 5 * 60 * 1000); // 5 minutes
-      
-      return () => clearInterval(syncInterval);
-    }
-  }, [isAuthenticated, syncWithCloud]);
-
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      // Essayer de se connecter via Supabase
-      const { user, error } = await supabaseAuth.login(username, password);
+      setIsSyncing(true);
+      
+      // Connexion via Supabase
+      const { user, error } = await supabaseAuth.signIn(email, password);
+      
+      if (error) {
+        console.error('Erreur de connexion:', error);
+        return false;
+      }
       
       if (user) {
-        // Définir l'utilisateur courant et l'état d'authentification
-        setCurrentUser(user);
-        setIsAuthenticated(true);
-        setIsAdmin(user.isAdmin);
-        
-        // Stocker l'authentification dans le localStorage avec sérialisation améliorée
-        safeLocalStorage.setItem('plancam_auth', serializeWithDates({
-          user: user
-        }));
-        
-        // Mettre à jour la liste des utilisateurs si nécessaire
-        const userExists = users.some(u => u.id === user.id);
-        if (!userExists) {
-          const updatedUsers = [...users, user];
-          setUsers(updatedUsers);
-          await saveUsers(updatedUsers);
-        } else {
-          // Mettre à jour l'utilisateur existant
-          const updatedUsers = users.map(u => u.id === user.id ? user : u);
-          setUsers(updatedUsers);
-          await saveUsers(updatedUsers);
-        }
-        
-        // Tenter une synchronisation avec Supabase après la connexion
-        syncWithCloud().catch(err => {
-          console.warn('Échec de la synchronisation après connexion:', err);
-        });
-        
-        console.log('Utilisateur connecté via Supabase:', user);
+        // L'authentification est gérée par l'écouteur onAuthStateChange
+        console.log('Connexion réussie');
         return true;
       }
       
-      // Si Supabase échoue, essayer la connexion locale
-      if (error) {
-        console.warn('Échec de connexion via Supabase, tentative locale:', error);
-        
-        // Rechercher l'utilisateur localement
-        const localUser = users.find(u => 
-          u.username.toLowerCase() === username.toLowerCase() && 
-          u.password === password
-        );
-        
-        if (localUser) {
-          // Mettre à jour la date de dernière connexion
-          const updatedUser = {
-            ...localUser,
-            lastLogin: new Date()
-          };
-          
-          // Mettre à jour l'utilisateur dans la liste
-          const updatedUsers = users.map(u => u.id === localUser.id ? updatedUser : u);
-          setUsers(updatedUsers);
-          
-          // Définir l'utilisateur courant et l'état d'authentification
-          setCurrentUser(updatedUser);
-          setIsAuthenticated(true);
-          setIsAdmin(updatedUser.isAdmin);
-          
-          // Stocker l'authentification dans le localStorage avec sérialisation améliorée
-          safeLocalStorage.setItem('plancam_auth', serializeWithDates({
-            user: updatedUser
-          }));
-          
-          // Sauvegarder les utilisateurs mis à jour
-          await saveUsers(updatedUsers);
-          
-          // Tenter une synchronisation avec Supabase après la connexion
-          syncWithCloud().catch(err => {
-            console.warn('Échec de la synchronisation après connexion locale:', err);
-          });
-          
-          console.log('Utilisateur connecté localement:', updatedUser);
-          return true;
-        }
-      }
-      
-      console.log('Échec de connexion pour:', username);
       return false;
     } catch (error) {
       console.error('Erreur lors de la connexion:', error);
       return false;
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   const logout = async () => {
     try {
-      // Déconnexion de Supabase
-      await supabaseAuth.logout();
+      setIsSyncing(true);
       
-      // Déconnexion locale
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setIsAdmin(false);
-      setIsAdminMode(false);
-      safeLocalStorage.removeItem('plancam_auth');
-      console.log('Utilisateur déconnecté');
+      // Déconnexion de Supabase
+      await supabaseAuth.signOut();
+      
+      // La déconnexion est gérée par l'écouteur onAuthStateChange
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
-  // Fonctions de gestion des utilisateurs
-  const addUser = async (username: string, password: string, isAdmin: boolean): Promise<User> => {
+  // Fonction pour inscrire un nouvel utilisateur
+  const register = async (email: string, password: string, isAdmin: boolean): Promise<boolean> => {
     try {
-      // Vérifier si l'utilisateur existe déjà dans Supabase
-      const { exists, error: checkError } = await supabaseUsers.exists(username);
+      setIsSyncing(true);
       
-      if (checkError) {
-        console.warn('Erreur lors de la vérification de l\'existence de l\'utilisateur:', checkError);
-      }
+      // Inscription via Supabase
+      const { user, error } = await supabaseAuth.signUp(email, password, { is_admin: isAdmin });
       
-      if (exists) {
-        throw new Error('Un utilisateur avec ce nom existe déjà');
-      }
-      
-      // Essayer d'ajouter l'utilisateur à Supabase
-      const { user: supabaseUser, error } = await supabaseUsers.add({
-        username,
-        password,
-        isAdmin
-      });
-      
-      if (supabaseUser) {
-        // Mettre à jour l'état des utilisateurs avec le nouvel utilisateur
-        const updatedUsers = [...users, supabaseUser];
-        setUsers(updatedUsers);
-        
-        // Sauvegarder localement
-        await saveUsers(updatedUsers);
-        
-        console.log('Utilisateur ajouté via Supabase:', supabaseUser);
-        return supabaseUser;
-      }
-      
-      // Si Supabase échoue, créer l'utilisateur localement
       if (error) {
-        console.warn('Échec de l\'ajout via Supabase, création locale:', error);
-        
-        // Créer le nouvel utilisateur
-        const newUser: User = {
-          id: uuidv4(),
-          username,
-          password,
-          isAdmin,
-          createdAt: new Date()
-        };
-        
-        // Mettre à jour l'état des utilisateurs avec le nouvel utilisateur
-        const updatedUsers = [...users, newUser];
-        setUsers(updatedUsers);
-        
-        // Sauvegarder localement
-        await saveUsers(updatedUsers);
-        
-        // Tenter une synchronisation avec Supabase
-        syncWithCloud().catch(err => {
-          console.warn('Échec de la synchronisation après ajout local:', err);
-        });
-        
-        console.log('Utilisateur ajouté localement:', newUser);
-        return newUser;
+        console.error('Erreur d\'inscription:', error);
+        return false;
       }
       
-      throw new Error('Erreur lors de l\'ajout de l\'utilisateur');
+      if (user) {
+        console.log('Inscription réussie');
+        return true;
+      }
+      
+      return false;
     } catch (error) {
-      console.error('Erreur lors de l\'ajout d\'un utilisateur:', error);
-      throw error;
-    }
-  };
-
-  const updateUser = async (id: string, updates: Partial<User>): Promise<void> => {
-    try {
-      // Essayer de mettre à jour l'utilisateur dans Supabase
-      const { error } = await supabaseUsers.update(id, updates);
-      
-      // Créer une nouvelle liste d'utilisateurs avec les mises à jour
-      const updatedUsers = users.map(user => {
-        if (user.id === id) {
-          const updatedUser = { ...user, ...updates };
-          console.log('Utilisateur mis à jour:', updatedUser);
-          return updatedUser;
-        }
-        return user;
-      });
-      
-      // Mettre à jour l'état
-      setUsers(updatedUsers);
-      
-      // Sauvegarder localement
-      await saveUsers(updatedUsers);
-      
-      // Si l'utilisateur courant est mis à jour, mettre à jour également l'utilisateur courant
-      if (currentUser && currentUser.id === id) {
-        const updatedCurrentUser = { ...currentUser, ...updates };
-        setCurrentUser(updatedCurrentUser);
-        setIsAdmin(updatedCurrentUser.isAdmin);
-        
-        // Mettre à jour le localStorage avec sérialisation améliorée
-        safeLocalStorage.setItem('plancam_auth', serializeWithDates({
-          user: updatedCurrentUser
-        }));
-      }
-      
-      // Si Supabase a échoué, tenter une synchronisation
-      if (error) {
-        console.warn('Échec de la mise à jour via Supabase, synchronisation planifiée:', error);
-        syncWithCloud().catch(err => {
-          console.warn('Échec de la synchronisation après mise à jour locale:', err);
-        });
-      }
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour de l\'utilisateur:', error);
-      throw error;
-    }
-  };
-
-  const deleteUser = async (id: string): Promise<void> => {
-    try {
-      // Empêcher la suppression de l'utilisateur admin principal
-      const userToDelete = users.find(u => u.id === id);
-      if (userToDelete && userToDelete.username === 'Dali') {
-        alert('Impossible de supprimer l\'administrateur principal');
-        return;
-      }
-      
-      // Empêcher la suppression de l'utilisateur courant
-      if (currentUser && currentUser.id === id) {
-        alert('Impossible de supprimer votre propre compte');
-        return;
-      }
-      
-      // Essayer de supprimer l'utilisateur de Supabase
-      const { error } = await supabaseUsers.delete(id);
-      
-      // Filtrer l'utilisateur à supprimer
-      const updatedUsers = users.filter(user => user.id !== id);
-      setUsers(updatedUsers);
-      
-      // Supprimer de IndexedDB
-      await deleteUserFromDB(id);
-      
-      // Sauvegarder dans localStorage
-      const serialized = serializeWithDates(updatedUsers);
-      safeLocalStorage.setItem('plancam_users', serialized);
-      
-      console.log('Utilisateur supprimé, ID:', id);
-      
-      // Si Supabase a échoué, tenter une synchronisation
-      if (error) {
-        console.warn('Échec de la suppression via Supabase, synchronisation planifiée:', error);
-        syncWithCloud().catch(err => {
-          console.warn('Échec de la synchronisation après suppression locale:', err);
-        });
-      }
-    } catch (error) {
-      console.error('Erreur lors de la suppression de l\'utilisateur:', error);
-      throw error;
+      console.error('Erreur lors de l\'inscription:', error);
+      return false;
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -926,7 +394,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     console.log(`Toutes les caméras et commentaires de la page ${page} ont été supprimés`);
   };
 
-  // Nouvelles fonctions pour gérer les commentaires
+  // Fonctions pour gérer les commentaires
   const addComment = (x: number, y: number, text: string, cameraId?: string) => {
     const newComment: Comment = {
       id: uuidv4(),
@@ -1158,7 +626,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Nouvelle fonction pour exporter toutes les pages en un seul PDF
+  // Fonction pour exporter toutes les pages en un seul PDF
   const exportPdf = async () => {
     console.log('Export de toutes les pages en un seul PDF');
     
@@ -1285,7 +753,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       selectedIconType,
       setSelectedIconType,
       clearCurrentPage,
-      // Nouvelles valeurs pour les commentaires
+      // Valeurs pour les commentaires
       comments,
       addComment,
       updateComment,
@@ -1294,17 +762,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedComment,
       isAddingComment,
       setIsAddingComment,
-      // Nouvelles valeurs pour la gestion des utilisateurs
+      // Valeurs pour la gestion des utilisateurs
       currentUser,
       isAdmin,
-      users,
-      addUser,
-      updateUser,
-      deleteUser,
+      register,
       isAdminMode,
       setIsAdminMode,
-      // Nouvelles valeurs pour la synchronisation
-      syncWithCloud,
+      // Valeurs pour la synchronisation
       isSyncing,
       lastSyncTime,
       syncError
