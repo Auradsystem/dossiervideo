@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import { 
   Box, 
   Drawer, 
@@ -13,19 +13,14 @@ import {
   Select,
   MenuItem,
   FormHelperText,
-  Paper,
-  Stack,
-  Tabs,
-  Tab,
-  useMediaQuery,
-  useTheme,
   SwipeableDrawer,
   Collapse,
   List,
   ListItem,
-  ListItemIcon,
   ListItemText,
-  ListItemButton
+  ListItemButton,
+  useMediaQuery,
+  useTheme
 } from '@mui/material';
 import { 
   Upload, 
@@ -34,22 +29,256 @@ import {
   Save, 
   Trash2, 
   ChevronLeft, 
-  ChevronRight,
   Camera as CameraIcon,
   Settings as SettingsIcon,
   Image as ImageIcon,
   ChevronDown,
   ChevronUp,
-  Trash as DeleteIcon,
-  Edit as EditIcon
+  Trash as DeleteIcon
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { CameraType, cameraIcons } from '../types/Camera';
+import { CameraType } from '../types/Camera';
 
 interface ResponsiveSidebarProps {
   open: boolean;
   onClose: () => void;
 }
+
+// Composants optimisés pour éviter les re-rendus inutiles
+const SectionHeader = memo(({ title, isOpen, toggleSection }: { title: string, isOpen: boolean, toggleSection: () => void }) => (
+  <ListItemButton onClick={toggleSection}>
+    <ListItemText primary={title} />
+    {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+  </ListItemButton>
+));
+
+const FileUploadButton = memo(({ onFileChange, fileInputKey }: { onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void, fileInputKey: number }) => (
+  <Button
+    variant="contained"
+    component="label"
+    fullWidth
+    startIcon={<Upload size={16} />}
+    sx={{ mt: 1 }}
+  >
+    Charger PDF
+    <input
+      key={fileInputKey}
+      type="file"
+      hidden
+      accept="application/pdf"
+      onChange={onFileChange}
+    />
+  </Button>
+));
+
+const CameraEditor = memo(({ 
+  selectedCameraData, 
+  handleCameraChange, 
+  handleDeleteCamera 
+}: { 
+  selectedCameraData: any, 
+  handleCameraChange: (field: string, value: any) => void, 
+  handleDeleteCamera: () => void 
+}) => (
+  <Box sx={{ pl: 2, pr: 2, pt: 1 }}>
+    <TextField
+      label="Nom"
+      value={selectedCameraData.name}
+      onChange={(e) => handleCameraChange('name', e.target.value)}
+      fullWidth
+      margin="dense"
+      size="small"
+    />
+    
+    <FormControl fullWidth margin="dense" size="small">
+      <InputLabel>Type</InputLabel>
+      <Select
+        value={selectedCameraData.type}
+        onChange={(e) => handleCameraChange('type', e.target.value)}
+        label="Type"
+      >
+        <MenuItem value="dome">Dôme</MenuItem>
+        <MenuItem value="bullet">Bullet</MenuItem>
+        <MenuItem value="ptz">PTZ</MenuItem>
+        <MenuItem value="fisheye">Fisheye</MenuItem>
+      </Select>
+    </FormControl>
+    
+    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+      Angle de vue: {selectedCameraData.angle}°
+    </Typography>
+    <Slider
+      value={selectedCameraData.angle}
+      onChange={(_, value) => handleCameraChange('angle', value)}
+      min={10}
+      max={360}
+      step={5}
+      valueLabelDisplay="auto"
+      sx={{ mt: 1 }}
+    />
+    
+    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+      Distance de vue: {selectedCameraData.viewDistance}
+    </Typography>
+    <Slider
+      value={selectedCameraData.viewDistance}
+      onChange={(_, value) => handleCameraChange('viewDistance', value)}
+      min={20}
+      max={500}
+      step={10}
+      valueLabelDisplay="auto"
+      sx={{ mt: 1 }}
+    />
+    
+    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+      Rotation: {selectedCameraData.rotation || 0}°
+    </Typography>
+    <Slider
+      value={selectedCameraData.rotation || 0}
+      onChange={(_, value) => handleCameraChange('rotation', value)}
+      min={-180}
+      max={180}
+      step={5}
+      valueLabelDisplay="auto"
+      sx={{ mt: 1 }}
+    />
+    
+    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+      Opacité: {selectedCameraData.opacity}
+    </Typography>
+    <Slider
+      value={selectedCameraData.opacity}
+      onChange={(_, value) => handleCameraChange('opacity', value)}
+      min={0.1}
+      max={1}
+      step={0.1}
+      valueLabelDisplay="auto"
+      sx={{ mt: 1 }}
+    />
+    
+    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+      Taille: {Math.round(selectedCameraData.width)}
+    </Typography>
+    <Slider
+      value={selectedCameraData.width}
+      onChange={(_, value) => {
+        handleCameraChange('width', value);
+        handleCameraChange('height', value);
+      }}
+      min={10}
+      max={100}
+      step={5}
+      valueLabelDisplay="auto"
+      sx={{ mt: 1 }}
+    />
+    
+    <Button
+      variant="outlined"
+      color="error"
+      startIcon={<DeleteIcon size={16} />}
+      onClick={handleDeleteCamera}
+      fullWidth
+      sx={{ mt: 3 }}
+    >
+      Supprimer la caméra
+    </Button>
+  </Box>
+));
+
+const CameraSettings = memo(({ 
+  namingPattern, 
+  nextCameraNumber, 
+  selectedIconType, 
+  handleNamingPatternChange, 
+  handleNextNumberChange, 
+  handleIconTypeChange 
+}: { 
+  namingPattern: string, 
+  nextCameraNumber: number, 
+  selectedIconType: string, 
+  handleNamingPatternChange: (e: React.ChangeEvent<HTMLInputElement>) => void, 
+  handleNextNumberChange: (e: React.ChangeEvent<HTMLInputElement>) => void, 
+  handleIconTypeChange: (e: any) => void 
+}) => (
+  <Box sx={{ pl: 2, pr: 2, pt: 1 }}>
+    <TextField
+      label="Préfixe de nommage"
+      value={namingPattern}
+      onChange={handleNamingPatternChange}
+      size="small"
+      fullWidth
+      margin="dense"
+    />
+    <TextField
+      label="Prochain numéro"
+      type="number"
+      value={nextCameraNumber}
+      onChange={handleNextNumberChange}
+      size="small"
+      fullWidth
+      margin="dense"
+      inputProps={{ min: 1 }}
+    />
+    <FormControl fullWidth margin="dense" size="small">
+      <InputLabel>Type de caméra</InputLabel>
+      <Select
+        value={selectedIconType}
+        onChange={handleIconTypeChange}
+        label="Type de caméra"
+      >
+        <MenuItem value="dome">Dôme</MenuItem>
+        <MenuItem value="bullet">Bullet</MenuItem>
+        <MenuItem value="ptz">PTZ</MenuItem>
+        <MenuItem value="fisheye">Fisheye</MenuItem>
+      </Select>
+      <FormHelperText>Type par défaut pour les nouvelles caméras</FormHelperText>
+    </FormControl>
+  </Box>
+));
+
+const ActionButtons = memo(({ 
+  previewPdf, 
+  exportCurrentPage, 
+  exportPdf, 
+  pdfFile 
+}: { 
+  previewPdf: () => void, 
+  exportCurrentPage: () => void, 
+  exportPdf: () => void, 
+  pdfFile: File | null 
+}) => (
+  <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Button
+        variant="outlined"
+        startIcon={<Eye size={16} />}
+        onClick={previewPdf}
+        fullWidth
+        disabled={!pdfFile}
+      >
+        Prévisualiser
+      </Button>
+      <Button
+        variant="outlined"
+        startIcon={<Save size={16} />}
+        onClick={exportCurrentPage}
+        fullWidth
+        disabled={!pdfFile}
+      >
+        Exporter page
+      </Button>
+      <Button
+        variant="contained"
+        startIcon={<Download size={16} />}
+        onClick={exportPdf}
+        fullWidth
+        disabled={!pdfFile}
+      >
+        Exporter tout
+      </Button>
+    </Box>
+  </Box>
+));
 
 const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) => {
   const theme = useTheme();
@@ -93,9 +322,11 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
     }
   };
 
-  const selectedCameraData = selectedCamera 
-    ? cameras.find(camera => camera.id === selectedCamera) 
-    : null;
+  // Utiliser useMemo pour éviter de recalculer cette valeur à chaque rendu
+  const selectedCameraData = useMemo(() => 
+    selectedCamera ? cameras.find(camera => camera.id === selectedCamera) : null, 
+    [selectedCamera, cameras]
+  );
 
   const handleCameraChange = (field: string, value: any) => {
     if (selectedCamera) {
@@ -132,7 +363,8 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
     setOpenSection(openSection === section ? null : section);
   };
   
-  const drawerContent = (
+  // Utiliser useMemo pour éviter de recréer le contenu du drawer à chaque rendu
+  const drawerContent = useMemo(() => (
     <Box sx={{ 
       width: isMobile ? '100%' : 300,
       height: '100%',
@@ -158,20 +390,6 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
         )}
       </Box>
       
-      {/* Onglets pour mobile */}
-      {isMobile && (
-        <Tabs 
-          value={activeTab} 
-          onChange={handleTabChange} 
-          variant="fullWidth"
-          sx={{ borderBottom: 1, borderColor: 'divider' }}
-        >
-          <Tab label="Plan" icon={<ImageIcon size={18} />} />
-          <Tab label="Caméras" icon={<CameraIcon size={18} />} />
-          <Tab label="Paramètres" icon={<SettingsIcon size={18} />} />
-        </Tabs>
-      )}
-      
       {/* Contenu principal */}
       <Box sx={{ 
         flexGrow: 1, 
@@ -179,32 +397,21 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
         display: 'flex',
         flexDirection: 'column'
       }}>
-        {/* Section Plan (toujours visible sur desktop, conditionnelle sur mobile) */}
+        {/* Section Plan */}
         {(!isMobile || activeTab === 0) && (
           <Box sx={{ p: 2 }}>
-            <ListItemButton onClick={() => toggleSection('general')}>
-              <ListItemText primary="Gestion du plan" />
-              {openSection === 'general' ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-            </ListItemButton>
+            <SectionHeader 
+              title="Gestion du plan" 
+              isOpen={openSection === 'general'} 
+              toggleSection={() => toggleSection('general')} 
+            />
             
             <Collapse in={openSection === 'general'} timeout="auto" unmountOnExit>
               <Box sx={{ pl: 2, pr: 2, pt: 1 }}>
-                <Button
-                  variant="contained"
-                  component="label"
-                  fullWidth
-                  startIcon={<Upload size={16} />}
-                  sx={{ mt: 1 }}
-                >
-                  Charger PDF
-                  <input
-                    key={fileInputKey}
-                    type="file"
-                    hidden
-                    accept="application/pdf"
-                    onChange={handleFileChange}
-                  />
-                </Button>
+                <FileUploadButton 
+                  onFileChange={handleFileChange} 
+                  fileInputKey={fileInputKey} 
+                />
                 
                 {pdfFile && (
                   <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic' }}>
@@ -233,123 +440,23 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
           </Box>
         )}
         
-        {/* Section Caméras (toujours visible sur desktop, conditionnelle sur mobile) */}
+        {/* Section Caméras */}
         {(!isMobile || activeTab === 1) && (
           <Box sx={{ p: 2 }}>
             {selectedCameraData ? (
               <>
-                <ListItemButton onClick={() => toggleSection('camera')}>
-                  <ListItemText 
-                    primary="Édition de la caméra" 
-                    secondary={selectedCameraData.name}
-                  />
-                  {openSection === 'camera' ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                </ListItemButton>
+                <SectionHeader 
+                  title="Édition de la caméra" 
+                  isOpen={openSection === 'camera'} 
+                  toggleSection={() => toggleSection('camera')} 
+                />
                 
                 <Collapse in={openSection === 'camera'} timeout="auto" unmountOnExit>
-                  <Box sx={{ pl: 2, pr: 2, pt: 1 }}>
-                    <TextField
-                      label="Nom"
-                      value={selectedCameraData.name}
-                      onChange={(e) => handleCameraChange('name', e.target.value)}
-                      fullWidth
-                      margin="dense"
-                      size="small"
-                    />
-                    
-                    <FormControl fullWidth margin="dense" size="small">
-                      <InputLabel>Type</InputLabel>
-                      <Select
-                        value={selectedCameraData.type}
-                        onChange={(e) => handleCameraChange('type', e.target.value)}
-                        label="Type"
-                      >
-                        <MenuItem value="dome">Dôme</MenuItem>
-                        <MenuItem value="bullet">Bullet</MenuItem>
-                        <MenuItem value="ptz">PTZ</MenuItem>
-                        <MenuItem value="fisheye">Fisheye</MenuItem>
-                      </Select>
-                    </FormControl>
-                    
-                    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-                      Angle de vue: {selectedCameraData.angle}°
-                    </Typography>
-                    <Slider
-                      value={selectedCameraData.angle}
-                      onChange={(_, value) => handleCameraChange('angle', value)}
-                      min={10}
-                      max={360}
-                      step={5}
-                      valueLabelDisplay="auto"
-                      sx={{ mt: 1 }}
-                    />
-                    
-                    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-                      Distance de vue: {selectedCameraData.viewDistance}
-                    </Typography>
-                    <Slider
-                      value={selectedCameraData.viewDistance}
-                      onChange={(_, value) => handleCameraChange('viewDistance', value)}
-                      min={20}
-                      max={500}
-                      step={10}
-                      valueLabelDisplay="auto"
-                      sx={{ mt: 1 }}
-                    />
-                    
-                    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-                      Rotation: {selectedCameraData.rotation || 0}°
-                    </Typography>
-                    <Slider
-                      value={selectedCameraData.rotation || 0}
-                      onChange={(_, value) => handleCameraChange('rotation', value)}
-                      min={-180}
-                      max={180}
-                      step={5}
-                      valueLabelDisplay="auto"
-                      sx={{ mt: 1 }}
-                    />
-                    
-                    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-                      Opacité: {selectedCameraData.opacity}
-                    </Typography>
-                    <Slider
-                      value={selectedCameraData.opacity}
-                      onChange={(_, value) => handleCameraChange('opacity', value)}
-                      min={0.1}
-                      max={1}
-                      step={0.1}
-                      valueLabelDisplay="auto"
-                      sx={{ mt: 1 }}
-                    />
-                    
-                    <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-                      Taille: {Math.round(selectedCameraData.width)}
-                    </Typography>
-                    <Slider
-                      value={selectedCameraData.width}
-                      onChange={(_, value) => {
-                        handleCameraChange('width', value);
-                        handleCameraChange('height', value);
-                      }}
-                      min={10}
-                      max={100}
-                      step={5}
-                      valueLabelDisplay="auto"
-                      sx={{ mt: 1 }}
-                    />
-                    
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      startIcon={<DeleteIcon size={16} />}
-                      onClick={handleDeleteCamera}
-                      fullWidth
-                      sx={{ mt: 3 }}
-                    >
-                      Supprimer la caméra
-                    </Button>
-                  </Box>
+                  <CameraEditor 
+                    selectedCameraData={selectedCameraData} 
+                    handleCameraChange={handleCameraChange} 
+                    handleDeleteCamera={handleDeleteCamera} 
+                  />
                 </Collapse>
               </>
             ) : (
@@ -362,88 +469,44 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
           </Box>
         )}
         
-        {/* Section Paramètres (toujours visible sur desktop, conditionnelle sur mobile) */}
+        {/* Section Paramètres */}
         {(!isMobile || activeTab === 2) && (
           <Box sx={{ p: 2 }}>
-            <ListItemButton onClick={() => toggleSection('settings')}>
-              <ListItemText primary="Paramètres des caméras" />
-              {openSection === 'settings' ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-            </ListItemButton>
+            <SectionHeader 
+              title="Paramètres des caméras" 
+              isOpen={openSection === 'settings'} 
+              toggleSection={() => toggleSection('settings')} 
+            />
             
             <Collapse in={openSection === 'settings'} timeout="auto" unmountOnExit>
-              <Box sx={{ pl: 2, pr: 2, pt: 1 }}>
-                <TextField
-                  label="Préfixe de nommage"
-                  value={namingPattern}
-                  onChange={handleNamingPatternChange}
-                  size="small"
-                  fullWidth
-                  margin="dense"
-                />
-                <TextField
-                  label="Prochain numéro"
-                  type="number"
-                  value={nextCameraNumber}
-                  onChange={handleNextNumberChange}
-                  size="small"
-                  fullWidth
-                  margin="dense"
-                  inputProps={{ min: 1 }}
-                />
-                <FormControl fullWidth margin="dense" size="small">
-                  <InputLabel>Type de caméra</InputLabel>
-                  <Select
-                    value={selectedIconType}
-                    onChange={handleIconTypeChange}
-                    label="Type de caméra"
-                  >
-                    <MenuItem value="dome">Dôme</MenuItem>
-                    <MenuItem value="bullet">Bullet</MenuItem>
-                    <MenuItem value="ptz">PTZ</MenuItem>
-                    <MenuItem value="fisheye">Fisheye</MenuItem>
-                  </Select>
-                  <FormHelperText>Type par défaut pour les nouvelles caméras</FormHelperText>
-                </FormControl>
-              </Box>
+              <CameraSettings 
+                namingPattern={namingPattern}
+                nextCameraNumber={nextCameraNumber}
+                selectedIconType={selectedIconType}
+                handleNamingPatternChange={handleNamingPatternChange}
+                handleNextNumberChange={handleNextNumberChange}
+                handleIconTypeChange={handleIconTypeChange}
+              />
             </Collapse>
           </Box>
         )}
       </Box>
       
       {/* Boutons d'action en bas */}
-      <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-        <Stack spacing={1}>
-          <Button
-            variant="outlined"
-            startIcon={<Eye size={16} />}
-            onClick={previewPdf}
-            fullWidth
-            disabled={!pdfFile}
-          >
-            Prévisualiser
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<Save size={16} />}
-            onClick={exportCurrentPage}
-            fullWidth
-            disabled={!pdfFile}
-          >
-            Exporter page
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<Download size={16} />}
-            onClick={exportPdf}
-            fullWidth
-            disabled={!pdfFile}
-          >
-            Exporter tout
-          </Button>
-        </Stack>
-      </Box>
+      <ActionButtons 
+        previewPdf={previewPdf}
+        exportCurrentPage={exportCurrentPage}
+        exportPdf={exportPdf}
+        pdfFile={pdfFile}
+      />
     </Box>
-  );
+  ), [
+    isMobile, isSmallScreen, activeTab, openSection, pdfFile, fileInputKey,
+    selectedCameraData, namingPattern, nextCameraNumber, selectedIconType,
+    handleFileChange, handleCameraChange, handleDeleteCamera,
+    handleNamingPatternChange, handleNextNumberChange, handleIconTypeChange,
+    toggleSection, clearCurrentPage, previewPdf, exportCurrentPage, exportPdf, onClose
+  ]);
   
   // Utiliser SwipeableDrawer sur mobile pour permettre de fermer en glissant
   if (isMobile) {
@@ -490,4 +553,4 @@ const ResponsiveSidebar: React.FC<ResponsiveSidebarProps> = ({ open, onClose }) 
   );
 };
 
-export default ResponsiveSidebar;
+export default React.memo(ResponsiveSidebar);
