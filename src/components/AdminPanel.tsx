@@ -42,7 +42,7 @@ const AdminPanel: React.FC = () => {
     deleteUser, 
     currentUser,
     isAdmin,
-    syncWithServer,
+    syncWithCloud,
     isSyncing,
     lastSyncTime,
     syncError
@@ -197,8 +197,8 @@ const AdminPanel: React.FC = () => {
           usersCount: users.length + 1 // +1 car l'état users n'est pas encore mis à jour
         });
         
-        // Synchroniser avec le serveur après l'ajout
-        await syncWithServer();
+        // Synchroniser avec le cloud après l'ajout
+        await syncWithCloud();
       } else if (selectedUser) {
         // Mettre à jour un utilisateur existant
         const updates: Partial<User> = {
@@ -220,8 +220,8 @@ const AdminPanel: React.FC = () => {
           severity: 'success'
         });
         
-        // Synchroniser avec le serveur après la mise à jour
-        await syncWithServer();
+        // Synchroniser avec le cloud après la mise à jour
+        await syncWithCloud();
       }
       
       handleCloseDialog();
@@ -248,8 +248,8 @@ const AdminPanel: React.FC = () => {
           severity: 'success'
         });
         
-        // Synchroniser avec le serveur après la suppression
-        await syncWithServer();
+        // Synchroniser avec le cloud après la suppression
+        await syncWithCloud();
       } catch (error) {
         console.error('Erreur lors de la suppression de l\'utilisateur:', error);
         setSnackbar({
@@ -261,9 +261,9 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleSyncWithServer = async () => {
+  const handleSyncWithCloud = async () => {
     try {
-      await syncWithServer();
+      await syncWithCloud();
       setSnackbar({
         open: true,
         message: 'Synchronisation réussie',
@@ -318,7 +318,7 @@ const AdminPanel: React.FC = () => {
           <Button 
             variant="outlined" 
             startIcon={isSyncing ? <CircularProgress size={20} /> : <RefreshIcon />}
-            onClick={handleSyncWithServer}
+            onClick={handleSyncWithCloud}
             disabled={isSyncing}
           >
             {isSyncing ? 'Synchronisation...' : 'Synchroniser'}

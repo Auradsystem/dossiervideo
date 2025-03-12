@@ -16,14 +16,14 @@ const LoginForm: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, syncWithServer } = useAppContext();
+  const { login, syncWithCloud } = useAppContext();
 
-  // Synchroniser avec le serveur au chargement
+  // Synchroniser avec le cloud au chargement
   useEffect(() => {
-    syncWithServer().catch(err => {
+    syncWithCloud().catch(err => {
       console.warn('Échec de la synchronisation initiale:', err);
     });
-  }, [syncWithServer]);
+  }, [syncWithCloud]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

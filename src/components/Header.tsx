@@ -32,7 +32,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
     isAdmin, 
     isAdminMode, 
     setIsAdminMode,
-    syncWithServer,
+    syncWithCloud,
     isSyncing,
     syncError
   } = useAppContext();
@@ -59,7 +59,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
   
   const handleSync = async () => {
     try {
-      await syncWithServer();
+      await syncWithCloud();
     } catch (error) {
       console.error('Erreur lors de la synchronisation:', error);
     }
@@ -85,7 +85,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
         
         {isAuthenticated && (
           <>
-            <Tooltip title="Synchroniser avec le serveur">
+            <Tooltip title="Synchroniser avec le cloud">
               <IconButton 
                 color="inherit" 
                 onClick={handleSync}
