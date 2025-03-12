@@ -4,9 +4,15 @@ import { Stage, Layer, Image as KonvaImage, Group } from 'react-konva';
 import { ZoomIn, ZoomOut, Add as AddIcon } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
-import CommentObject from './CommentObject';
 import CommentForm from './CommentForm';
 import { createDefaultCamera } from '../types/Camera';
+
+// Déclaration pour pdfjsLib qui est chargé globalement
+declare global {
+  interface Window {
+    pdfjsLib: any;
+  }
+}
 
 const PdfViewer: React.FC = () => {
   const { pdfFile, cameras, addCamera } = useAppContext();
@@ -44,6 +50,11 @@ const PdfViewer: React.FC = () => {
         // Convertir le PDF en image
         const pdfUrl = URL.createObjectURL(file);
         
+        // Vérifier si pdfjsLib est disponible
+        if (!window.pdfjsLib) {
+          throw new Error("PDF.js n'est pas chargé. Veuillez vous assurer que la bibliothèque est correctement importée.");
+        }
+        
         // Utiliser un canvas pour rendre la première page du PDF
         const pdfjsLib = window.pdfjsLib;
         const loadingTask = pdfjsLib.getDocument(pdfUrl);
@@ -55,11 +66,15 @@ const PdfViewer: React.FC = () => {
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         
+        if (!context) {
+          throw new Error("Impossible de créer un contexte de canvas 2D");
+        }
+        
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         
         await page.render({
-          canvasContext: context!,
+          canvasContext: context,
           viewport: viewport
         }).promise;
         
@@ -135,6 +150,8 @@ const PdfViewer: React.FC = () => {
     }
     
     const stage = stageRef.current;
+    if (!stage) return;
+    
     const pointerPosition = stage.getPointerPosition();
     
     if (pointerPosition) {

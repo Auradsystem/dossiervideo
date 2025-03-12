@@ -1,117 +1,75 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User } from '../types/User';
+import { v4 as uuidv4 } from 'uuid';
+import { Camera, createDefaultCamera, CameraType } from '../types/Camera';
 import { Comment } from '../types/Comment';
-import { Camera } from '../types/Camera';
-import { Project } from '../types/Project';
-import { supabaseAuth, supabaseStorage } from '../lib/supabase';
+import { User } from '../types/User';
+import { supabaseAuth } from '../lib/supabase';
 
-// Interface pour le contexte de l'application
+// Définir l'interface du contexte
 interface AppContextType {
-  // État d'authentification
-  isAuthenticated: boolean;
+  // État de l'utilisateur
   currentUser: User | null;
-  isAdmin: boolean;
-  isAdminMode: boolean;
-  
-  // Gestion des projets
-  projects: Project[];
-  currentProject: Project | null;
+  setCurrentUser: React.Dispatch<React.SetStateAction<User | null>>;
+  isAuthenticated: boolean;
   
   // Gestion des PDF
-  pdfFile: string | null;
-  pdfName: string;
-  
-  // Gestion des commentaires
-  comments: Comment[];
+  pdfFile: File | string | null;
+  setPdfFile: React.Dispatch<React.SetStateAction<File | string | null>>;
   
   // Gestion des caméras
   cameras: Camera[];
+  selectedCamera: string | null;
+  setSelectedCamera: React.Dispatch<React.SetStateAction<string | null>>;
+  addCamera: (camera: Omit<Camera, 'id'>) => void;
+  updateCamera: (id: string, updates: Partial<Camera>) => void;
+  deleteCamera: (id: string) => void;
   
-  // État de synchronisation
-  isSyncing: boolean;
-  
-  // Fonctions d'authentification
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
-  register: (email: string, password: string, isAdmin: boolean) => Promise<boolean>;
-  toggleAdminMode: () => void;
-  
-  // Fonctions de gestion des projets
-  setCurrentProject: (project: Project | null) => void;
-  createProject: (name: string) => Promise<Project | null>;
-  
-  // Fonctions de gestion des PDF
-  setPdfFile: (file: string | null, name?: string) => void;
-  uploadPdf: (file: File, projectName: string) => Promise<boolean>;
-  
-  // Fonctions de gestion des commentaires
-  addComment: (comment: Omit<Comment, 'id' | 'createdAt'>) => void;
-  updateComment: (id: string, text: string) => void;
+  // Gestion des commentaires
+  comments: Comment[];
+  addComment: (comment: Omit<Comment, 'id'>) => void;
+  updateComment: (id: string, updates: Partial<Comment>) => void;
   deleteComment: (id: string) => void;
   
-  // Fonctions de gestion des caméras
-  addCamera: (camera: Omit<Camera, 'id'>) => void;
-  updateCamera: (id: string, data: Partial<Camera>) => void;
-  deleteCamera: (id: string) => void;
+  // Gestion de l'interface
+  isSidebarOpen: boolean;
+  setIsSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  
+  // Authentification
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (email: string, password: string, isAdmin?: boolean) => Promise<void>;
 }
 
-// Valeurs par défaut pour le contexte
-const defaultContextValue: AppContextType = {
-  isAuthenticated: false,
-  currentUser: null,
-  isAdmin: false,
-  isAdminMode: false,
-  projects: [],
-  currentProject: null,
-  pdfFile: null,
-  pdfName: '',
-  comments: [],
-  cameras: [],
-  isSyncing: false,
-  login: async () => false,
-  logout: async () => {},
-  register: async () => false,
-  toggleAdminMode: () => {},
-  setCurrentProject: () => {},
-  createProject: async () => null,
-  setPdfFile: () => {},
-  uploadPdf: async () => false,
-  addComment: () => {},
-  updateComment: () => {},
-  deleteComment: () => {},
-  addCamera: () => {},
-  updateCamera: () => {},
-  deleteCamera: () => {}
-};
-
-// Créer le contexte
-const AppContext = createContext<AppContextType>(defaultContextValue);
+// Créer le contexte avec une valeur par défaut
+const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // Hook personnalisé pour utiliser le contexte
-export const useAppContext = () => useContext(AppContext);
+export const useAppContext = () => {
+  const context = useContext(AppContext);
+  if (context === undefined) {
+    throw new Error('useAppContext doit être utilisé à l'intérieur d'un AppProvider');
+  }
+  return context;
+};
 
 // Fournisseur du contexte
-export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // État d'authentification
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // État de l'utilisateur
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
-  // État des projets
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  // Gestion des PDF
+  const [pdfFile, setPdfFile] = useState<File | string | null>(null);
   
-  // État du PDF
-  const [pdfFile, setPdfFileState] = useState<string | null>(null);
-  const [pdfName, setPdfName] = useState('');
-  
-  // État des commentaires et caméras
-  const [comments, setComments] = useState<Comment[]>([]);
+  // Gestion des caméras
   const [cameras, setCameras] = useState<Camera[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
   
-  // État de synchronisation
-  const [isSyncing, setIsSyncing] = useState(false);
+  // Gestion des commentaires
+  const [comments, setComments] = useState<Comment[]>([]);
+  
+  // Gestion de l'interface
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
   // Vérifier l'authentification au chargement
   useEffect(() => {
@@ -119,249 +77,66 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       try {
         const { session, user } = await supabaseAuth.getSession();
         
-        if (session && user) {
-          setIsAuthenticated(true);
+        if (user) {
           setCurrentUser(user);
-          setIsAdmin(user.isAdmin);
-          
-          // Charger les projets de l'utilisateur
-          loadUserProjects();
+          setIsAuthenticated(true);
+        } else {
+          setCurrentUser(null);
+          setIsAuthenticated(false);
         }
       } catch (error) {
-        console.error('Erreur lors de la vérification de l\'authentification:', error);
+        console.error('Erreur lors de la vérification de l'authentification:', error);
+        setCurrentUser(null);
+        setIsAuthenticated(false);
       }
     };
     
     checkAuth();
   }, []);
   
-  // Charger les projets de l'utilisateur
-  const loadUserProjects = async () => {
-    try {
-      setIsSyncing(true);
-      
-      const { data, error } = await supabaseStorage.listUserProjects();
-      
-      if (error) {
-        console.error('Erreur lors du chargement des projets:', error);
-        return;
-      }
-      
-      if (data) {
-        const projectsList: Project[] = data.map(project => ({
-          id: project.path,
-          name: project.name,
-          createdAt: new Date(project.createdAt || Date.now())
-        }));
-        
-        setProjects(projectsList);
-        
-        // Si un projet courant n'est pas défini et qu'il y a des projets, définir le premier comme courant
-        if (!currentProject && projectsList.length > 0) {
-          setCurrentProject(projectsList[0]);
-        }
-      }
-    } catch (error) {
-      console.error('Erreur lors du chargement des projets:', error);
-    } finally {
-      setIsSyncing(false);
-    }
+  // Fonction pour ajouter une caméra
+  const addCamera = (camera: Omit<Camera, 'id'>) => {
+    const newCamera: Camera = {
+      ...camera,
+      id: uuidv4()
+    };
+    
+    setCameras(prev => [...prev, newCamera]);
+    setSelectedCamera(newCamera.id);
   };
   
-  // Fonction de connexion
-  const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      const { user, error } = await supabaseAuth.signIn(email, password);
-      
-      if (error) {
-        console.error('Erreur de connexion:', error);
-        return false;
-      }
-      
-      if (user) {
-        setIsAuthenticated(true);
-        setCurrentUser(user);
-        setIsAdmin(user.isAdmin);
-        
-        // Charger les projets de l'utilisateur
-        await loadUserProjects();
-        
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.error('Erreur lors de la connexion:', error);
-      return false;
-    }
+  // Fonction pour mettre à jour une caméra
+  const updateCamera = (id: string, updates: Partial<Camera>) => {
+    setCameras(prev =>
+      prev.map(camera =>
+        camera.id === id ? { ...camera, ...updates } : camera
+      )
+    );
   };
   
-  // Fonction de déconnexion
-  const logout = async (): Promise<void> => {
-    try {
-      const { error } = await supabaseAuth.signOut();
-      
-      if (error) {
-        console.error('Erreur lors de la déconnexion:', error);
-        return;
-      }
-      
-      // Réinitialiser l'état
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setIsAdmin(false);
-      setIsAdminMode(false);
-      setProjects([]);
-      setCurrentProject(null);
-      setPdfFileState(null);
-      setPdfName('');
-      setComments([]);
-      setCameras([]);
-    } catch (error) {
-      console.error('Erreur lors de la déconnexion:', error);
-    }
-  };
-  
-  // Fonction d'inscription
-  const register = async (email: string, password: string, isAdmin: boolean): Promise<boolean> => {
-    try {
-      const { user, error } = await supabaseAuth.signUp(email, password, { is_admin: isAdmin });
-      
-      if (error) {
-        console.error('Erreur lors de l\'inscription:', error);
-        return false;
-      }
-      
-      return !!user;
-    } catch (error) {
-      console.error('Erreur lors de l\'inscription:', error);
-      return false;
-    }
-  };
-  
-  // Fonction pour basculer le mode admin
-  const toggleAdminMode = () => {
-    if (isAdmin) {
-      setIsAdminMode(!isAdminMode);
-    }
-  };
-  
-  // Fonction pour définir le PDF courant
-  const setPdfFile = (file: string | null, name = '') => {
-    setPdfFileState(file);
-    if (name) {
-      setPdfName(name);
-    }
-  };
-  
-  // Fonction pour télécharger un PDF
-  const uploadPdf = async (file: File, projectName: string): Promise<boolean> => {
-    try {
-      setIsSyncing(true);
-      
-      // Créer le projet s'il n'existe pas
-      let projectExists = projects.some(p => p.name === projectName);
-      
-      if (!projectExists) {
-        const newProject = await createProject(projectName);
-        if (!newProject) {
-          throw new Error('Impossible de créer le projet');
-        }
-      }
-      
-      // Télécharger le fichier
-      const { data, error } = await supabaseStorage.uploadPdf(file, projectName);
-      
-      if (error) {
-        console.error('Erreur lors du téléchargement du PDF:', error);
-        return false;
-      }
-      
-      if (data) {
-        // Mettre à jour le PDF courant
-        setPdfFile(data.url, data.fileName);
-        
-        // Recharger les projets pour mettre à jour la liste
-        await loadUserProjects();
-        
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.error('Erreur lors du téléchargement du PDF:', error);
-      return false;
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-  
-  // Fonction pour créer un projet
-  const createProject = async (name: string): Promise<Project | null> => {
-    try {
-      // Vérifier si le projet existe déjà
-      const projectExists = projects.some(p => p.name === name);
-      
-      if (projectExists) {
-        // Si le projet existe, le retourner
-        const existingProject = projects.find(p => p.name === name);
-        if (existingProject) {
-          return existingProject;
-        }
-      }
-      
-      // Créer un nouveau projet (dossier) dans Supabase Storage
-      // Note: Supabase Storage ne permet pas de créer des dossiers vides directement
-      // Nous allons donc créer un fichier placeholder pour créer le dossier
-      
-      // Créer un fichier placeholder
-      const placeholderContent = new Blob([''], { type: 'text/plain' });
-      const placeholderFile = new File([placeholderContent], '.placeholder', { type: 'text/plain' });
-      
-      // Télécharger le fichier placeholder pour créer le dossier
-      const { data, error } = await supabaseStorage.uploadPdf(placeholderFile, name);
-      
-      if (error) {
-        console.error('Erreur lors de la création du projet:', error);
-        return null;
-      }
-      
-      // Créer l'objet projet
-      const newProject: Project = {
-        id: `users/${currentUser?.id}/projects/${name.replace(/\s+/g, '_')}`,
-        name,
-        createdAt: new Date()
-      };
-      
-      // Mettre à jour la liste des projets
-      setProjects(prev => [...prev, newProject]);
-      
-      // Définir le nouveau projet comme projet courant
-      setCurrentProject(newProject);
-      
-      return newProject;
-    } catch (error) {
-      console.error('Erreur lors de la création du projet:', error);
-      return null;
+  // Fonction pour supprimer une caméra
+  const deleteCamera = (id: string) => {
+    setCameras(prev => prev.filter(camera => camera.id !== id));
+    if (selectedCamera === id) {
+      setSelectedCamera(null);
     }
   };
   
   // Fonction pour ajouter un commentaire
-  const addComment = (comment: Omit<Comment, 'id' | 'createdAt'>) => {
+  const addComment = (comment: Omit<Comment, 'id'>) => {
     const newComment: Comment = {
       ...comment,
-      id: Date.now().toString(),
-      createdAt: new Date()
+      id: uuidv4()
     };
     
     setComments(prev => [...prev, newComment]);
   };
   
   // Fonction pour mettre à jour un commentaire
-  const updateComment = (id: string, text: string) => {
-    setComments(prev => 
-      prev.map(comment => 
-        comment.id === id ? { ...comment, text } : comment
+  const updateComment = (id: string, updates: Partial<Comment>) => {
+    setComments(prev =>
+      prev.map(comment =>
+        comment.id === id ? { ...comment, ...updates } : comment
       )
     );
   };
@@ -371,64 +146,78 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setComments(prev => prev.filter(comment => comment.id !== id));
   };
   
-  // Fonction pour ajouter une caméra
-  const addCamera = (camera: Omit<Camera, 'id'>) => {
-    const newCamera: Camera = {
-      ...camera,
-      id: Date.now().toString()
-    };
-    
-    setCameras(prev => [...prev, newCamera]);
+  // Fonction de connexion
+  const login = async (email: string, password: string) => {
+    try {
+      const { user, error } = await supabaseAuth.signIn(email, password);
+      
+      if (error) throw error;
+      
+      if (user) {
+        setCurrentUser(user);
+        setIsAuthenticated(true);
+      }
+    } catch (error: any) {
+      console.error('Erreur lors de la connexion:', error);
+      throw error;
+    }
   };
   
-  // Fonction pour mettre à jour une caméra
-  const updateCamera = (id: string, data: Partial<Camera>) => {
-    setCameras(prev => 
-      prev.map(camera => 
-        camera.id === id ? { ...camera, ...data } : camera
-      )
-    );
+  // Fonction de déconnexion
+  const logout = async () => {
+    try {
+      const { error } = await supabaseAuth.signOut();
+      
+      if (error) throw error;
+      
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+    } catch (error: any) {
+      console.error('Erreur lors de la déconnexion:', error);
+      throw error;
+    }
   };
   
-  // Fonction pour supprimer une caméra
-  const deleteCamera = (id: string) => {
-    setCameras(prev => prev.filter(camera => camera.id !== id));
+  // Fonction d'inscription
+  const register = async (email: string, password: string, isAdmin = false) => {
+    try {
+      const { user, error } = await supabaseAuth.signUp(email, password, { is_admin: isAdmin });
+      
+      if (error) throw error;
+      
+      if (user) {
+        setCurrentUser(user);
+        setIsAuthenticated(true);
+      }
+    } catch (error: any) {
+      console.error('Erreur lors de l\'inscription:', error);
+      throw error;
+    }
   };
   
   // Valeur du contexte
-  const contextValue: AppContextType = {
-    isAuthenticated,
+  const value: AppContextType = {
     currentUser,
-    isAdmin,
-    isAdminMode,
-    projects,
-    currentProject,
+    setCurrentUser,
+    isAuthenticated,
     pdfFile,
-    pdfName,
-    comments,
-    cameras,
-    isSyncing,
-    login,
-    logout,
-    register,
-    toggleAdminMode,
-    setCurrentProject,
-    createProject,
     setPdfFile,
-    uploadPdf,
+    cameras,
+    selectedCamera,
+    setSelectedCamera,
+    addCamera,
+    updateCamera,
+    deleteCamera,
+    comments,
     addComment,
     updateComment,
     deleteComment,
-    addCamera,
-    updateCamera,
-    deleteCamera
+    isSidebarOpen,
+    setIsSidebarOpen,
+    login,
+    logout,
+    register
   };
   
-  return (
-    <AppContext.Provider value={contextValue}>
-      {children}
-    </AppContext.Provider>
-  );
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
-
-export default AppContext;
