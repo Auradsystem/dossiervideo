@@ -1,408 +1,329 @@
-import React, { useState, useRef } from 'react';
-import {
-  Box,
-  Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Divider,
-  Typography,
-  Button,
+import React, { useState } from 'react';
+import { 
+  Box, 
+  Drawer, 
+  Divider, 
+  Typography, 
+  Button, 
+  TextField, 
   IconButton,
-  Tooltip,
-  Menu,
+  Slider,
+  FormControl,
+  InputLabel,
+  Select,
   MenuItem,
-  Avatar,
-  Badge
+  FormHelperText,
+  Paper,
+  Stack
 } from '@mui/material';
-import {
-  Upload as UploadIcon,
-  Download as DownloadIcon,
-  Eye as EyeIcon,
-  Settings as SettingsIcon,
-  LogOut as LogOutIcon,
-  User as UserIcon,
-  ChevronLeft as ChevronLeftIcon,
-  ChevronRight as ChevronRightIcon,
-  Folder as FolderIcon,
-  Camera as CameraIcon
-} from 'lucide-react';
+import { Upload, Download, Eye, Save, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { CameraType, cameraIcons } from '../types/Camera';
 
-interface SidebarProps {
-  width: number;
-  isOpen: boolean;
-  onToggle: () => void;
-  onOpenProjectManager: () => void;
-}
+const drawerWidth = 300;
 
-const Sidebar: React.FC<SidebarProps> = ({ width, isOpen, onToggle, onOpenProjectManager }) => {
+const Sidebar: React.FC = () => {
   const { 
     pdfFile, 
     setPdfFile, 
-    exportPdf, 
-    exportCurrentPage, 
+    selectedCamera, 
+    updateCamera, 
+    deleteCamera,
+    cameras,
+    exportPdf,
+    exportCurrentPage,
     previewPdf,
-    currentUser,
-    logout,
-    isAdmin,
-    isAdminMode,
-    setIsAdminMode
+    namingPattern,
+    setNamingPattern,
+    nextCameraNumber,
+    setNextCameraNumber,
+    selectedIconType,
+    setSelectedIconType
   } = useAppContext();
   
-  const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileInputKey, setFileInputKey] = useState(Date.now());
   
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
+    if (event.target.files && event.target.files[0]) {
+      const file = event.target.files[0];
       if (file.type === 'application/pdf') {
         setPdfFile(file);
+        console.log(`Fichier PDF chargé: ${file.name}`);
       } else {
         alert('Veuillez sélectionner un fichier PDF');
       }
+      // Reset the file input
+      setFileInputKey(Date.now());
     }
   };
-  
-  const handleUploadClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
+
+  const selectedCameraData = selectedCamera 
+    ? cameras.find(camera => camera.id === selectedCamera) 
+    : null;
+
+  const handleCameraChange = (field: string, value: any) => {
+    if (selectedCamera) {
+      updateCamera(selectedCamera, { [field]: value });
     }
   };
-  
-  const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setUserMenuAnchor(event.currentTarget);
+
+  const handleDeleteCamera = () => {
+    if (selectedCamera && window.confirm('Êtes-vous sûr de vouloir supprimer cette caméra ?')) {
+      deleteCamera(selectedCamera);
+    }
   };
-  
-  const handleUserMenuClose = () => {
-    setUserMenuAnchor(null);
+
+  const handleNamingPatternChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNamingPattern(e.target.value);
   };
-  
-  const handleLogout = () => {
-    handleUserMenuClose();
-    logout();
+
+  const handleNextNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value, 10);
+    if (!isNaN(value) && value > 0) {
+      setNextCameraNumber(value);
+    }
   };
-  
-  const handleToggleAdminMode = () => {
-    handleUserMenuClose();
-    setIsAdminMode(!isAdminMode);
+
+  const handleIconTypeChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+    setSelectedIconType(event.target.value as string);
   };
-  
-  // Obtenir les initiales de l'utilisateur pour l'avatar
-  const getUserInitials = () => {
-    if (!currentUser) return '?';
-    
-    const email = currentUser.email;
-    if (!email) return '?';
-    
-    // Utiliser la première lettre de l'email
-    return email.charAt(0).toUpperCase();
-  };
-  
+
   return (
     <Drawer
       variant="permanent"
-      anchor="left"
-      open={isOpen}
       sx={{
-        width: isOpen ? width : 64,
+        width: drawerWidth,
         flexShrink: 0,
         '& .MuiDrawer-paper': {
-          width: isOpen ? width : 64,
+          width: drawerWidth,
           boxSizing: 'border-box',
-          overflowX: 'hidden',
-          transition: theme => theme.transitions.create('width', {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
+          bgcolor: 'background.paper',
+          borderRight: '1px solid rgba(0, 0, 0, 0.12)',
         },
       }}
     >
-      <Box sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: isOpen ? 'space-between' : 'center',
-        p: 2
-      }}>
-        {isOpen && (
-          <Typography variant="h6" noWrap component="div">
-            PlanCam
+      <Box sx={{ p: 2 }}>
+        <Typography variant="h6" gutterBottom>
+          PlanCam
+        </Typography>
+        <Typography variant="body2" color="text.secondary" gutterBottom>
+          Gestion de caméras sur plan
+        </Typography>
+        
+        <Button
+          variant="contained"
+          component="label"
+          fullWidth
+          startIcon={<Upload size={16} />}
+          sx={{ mt: 2 }}
+        >
+          Charger PDF
+          <input
+            key={fileInputKey}
+            type="file"
+            hidden
+            accept="application/pdf"
+            onChange={handleFileChange}
+          />
+        </Button>
+        
+        {pdfFile && (
+          <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic' }}>
+            Fichier: {pdfFile.name}
           </Typography>
         )}
         
-        <IconButton onClick={onToggle}>
-          {isOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-        </IconButton>
+        <Divider sx={{ my: 2 }} />
+        
+        <Typography variant="subtitle1" gutterBottom>
+          Paramètres des caméras
+        </Typography>
+        
+        <Box sx={{ mb: 2 }}>
+          <TextField
+            label="Préfixe de nommage"
+            value={namingPattern}
+            onChange={handleNamingPatternChange}
+            size="small"
+            fullWidth
+            margin="dense"
+          />
+          <TextField
+            label="Prochain numéro"
+            type="number"
+            value={nextCameraNumber}
+            onChange={handleNextNumberChange}
+            size="small"
+            fullWidth
+            margin="dense"
+            inputProps={{ min: 1 }}
+          />
+          <FormControl fullWidth margin="dense" size="small">
+            <InputLabel>Type de caméra</InputLabel>
+            <Select
+              value={selectedIconType}
+              onChange={handleIconTypeChange}
+              label="Type de caméra"
+            >
+              <MenuItem value="dome">Dôme</MenuItem>
+              <MenuItem value="bullet">Bullet</MenuItem>
+              <MenuItem value="ptz">PTZ</MenuItem>
+              <MenuItem value="fisheye">Fisheye</MenuItem>
+            </Select>
+            <FormHelperText>Type par défaut pour les nouvelles caméras</FormHelperText>
+          </FormControl>
+        </Box>
       </Box>
       
       <Divider />
       
-      {/* Informations utilisateur */}
-      <Box sx={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center',
-        p: 2
-      }}>
-        <Badge
-          overlap="circular"
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          badgeContent={
-            isAdmin ? (
-              <Tooltip title="Administrateur">
-                <Box
-                  sx={{
-                    width: 12,
-                    height: 12,
-                    borderRadius: '50%',
-                    bgcolor: 'primary.main',
-                    border: '2px solid white'
-                  }}
-                />
-              </Tooltip>
-            ) : null
-          }
-        >
-          <Avatar 
-            sx={{ 
-              width: isOpen ? 56 : 40, 
-              height: isOpen ? 56 : 40,
-              cursor: 'pointer',
-              bgcolor: isAdmin ? 'primary.main' : 'secondary.main'
-            }}
-            onClick={handleUserMenuOpen}
-          >
-            {getUserInitials()}
-          </Avatar>
-        </Badge>
-        
-        {isOpen && currentUser && (
-          <Box sx={{ mt: 1, textAlign: 'center' }}>
-            <Typography variant="subtitle1" noWrap>
-              {currentUser.email}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {isAdmin ? 'Administrateur' : 'Utilisateur'}
-            </Typography>
-            {isAdmin && isAdminMode && (
-              <Typography 
-                variant="caption" 
-                sx={{ 
-                  display: 'inline-block', 
-                  mt: 0.5, 
-                  bgcolor: 'primary.main', 
-                  color: 'white',
-                  px: 1,
-                  py: 0.5,
-                  borderRadius: 1
-                }}
-              >
-                Mode Admin
-              </Typography>
-            )}
-          </Box>
-        )}
-        
-        <Menu
-          anchorEl={userMenuAnchor}
-          open={Boolean(userMenuAnchor)}
-          onClose={handleUserMenuClose}
-          anchorOrigin={{
-            vertical: 'bottom',
-            horizontal: 'center',
-          }}
-          transformOrigin={{
-            vertical: 'top',
-            horizontal: 'center',
-          }}
-        >
-          <MenuItem onClick={handleUserMenuClose}>
-            <ListItemIcon>
-              <UserIcon size={18} />
-            </ListItemIcon>
-            <ListItemText>Mon profil</ListItemText>
-          </MenuItem>
+      {selectedCameraData ? (
+        <Box sx={{ p: 2, overflow: 'auto' }}>
+          <Typography variant="subtitle1" gutterBottom>
+            Édition de la caméra
+          </Typography>
           
-          {isAdmin && (
-            <MenuItem onClick={handleToggleAdminMode}>
-              <ListItemIcon>
-                <SettingsIcon size={18} />
-              </ListItemIcon>
-              <ListItemText>{isAdminMode ? 'Quitter le mode admin' : 'Mode admin'}</ListItemText>
-            </MenuItem>
-          )}
+          <TextField
+            label="Nom"
+            value={selectedCameraData.name}
+            onChange={(e) => handleCameraChange('name', e.target.value)}
+            fullWidth
+            margin="dense"
+            size="small"
+          />
           
-          <Divider />
-          
-          <MenuItem onClick={handleLogout}>
-            <ListItemIcon>
-              <LogOutIcon size={18} />
-            </ListItemIcon>
-            <ListItemText>Déconnexion</ListItemText>
-          </MenuItem>
-        </Menu>
-      </Box>
-      
-      <Divider />
-      
-      <List>
-        <ListItem disablePadding sx={{ display: 'block' }}>
-          <ListItemButton
-            sx={{
-              minHeight: 48,
-              justifyContent: isOpen ? 'initial' : 'center',
-              px: 2.5,
-            }}
-            onClick={onOpenProjectManager}
-          >
-            <ListItemIcon
-              sx={{
-                minWidth: 0,
-                mr: isOpen ? 3 : 'auto',
-                justifyContent: 'center',
-              }}
+          <FormControl fullWidth margin="dense" size="small">
+            <InputLabel>Type</InputLabel>
+            <Select
+              value={selectedCameraData.type}
+              onChange={(e) => handleCameraChange('type', e.target.value)}
+              label="Type"
             >
-              <FolderIcon />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Projets" 
-              sx={{ opacity: isOpen ? 1 : 0 }} 
-            />
-          </ListItemButton>
-        </ListItem>
-        
-        <ListItem disablePadding sx={{ display: 'block' }}>
-          <ListItemButton
-            sx={{
-              minHeight: 48,
-              justifyContent: isOpen ? 'initial' : 'center',
-              px: 2.5,
+              <MenuItem value="dome">Dôme</MenuItem>
+              <MenuItem value="bullet">Bullet</MenuItem>
+              <MenuItem value="ptz">PTZ</MenuItem>
+              <MenuItem value="fisheye">Fisheye</MenuItem>
+            </Select>
+          </FormControl>
+          
+          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+            Angle de vue: {selectedCameraData.angle}°
+          </Typography>
+          <Slider
+            value={selectedCameraData.angle}
+            onChange={(_, value) => handleCameraChange('angle', value)}
+            min={10}
+            max={360}
+            step={5}
+            valueLabelDisplay="auto"
+            sx={{ mt: 1 }}
+          />
+          
+          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+            Distance de vue: {selectedCameraData.viewDistance}
+          </Typography>
+          <Slider
+            value={selectedCameraData.viewDistance}
+            onChange={(_, value) => handleCameraChange('viewDistance', value)}
+            min={20}
+            max={500}
+            step={10}
+            valueLabelDisplay="auto"
+            sx={{ mt: 1 }}
+          />
+          
+          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+            Rotation: {selectedCameraData.rotation || 0}°
+          </Typography>
+          <Slider
+            value={selectedCameraData.rotation || 0}
+            onChange={(_, value) => handleCameraChange('rotation', value)}
+            min={-180}
+            max={180}
+            step={5}
+            valueLabelDisplay="auto"
+            sx={{ mt: 1 }}
+          />
+          
+          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+            Opacité: {selectedCameraData.opacity}
+          </Typography>
+          <Slider
+            value={selectedCameraData.opacity}
+            onChange={(_, value) => handleCameraChange('opacity', value)}
+            min={0.1}
+            max={1}
+            step={0.1}
+            valueLabelDisplay="auto"
+            sx={{ mt: 1 }}
+          />
+          
+          <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
+            Taille: {Math.round(selectedCameraData.width)}
+          </Typography>
+          <Slider
+            value={selectedCameraData.width}
+            onChange={(_, value) => {
+              handleCameraChange('width', value);
+              handleCameraChange('height', value);
             }}
-            onClick={handleUploadClick}
+            min={10}
+            max={100}
+            step={5}
+            valueLabelDisplay="auto"
+            sx={{ mt: 1 }}
+          />
+          
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<Trash2 size={16} />}
+            onClick={handleDeleteCamera}
+            fullWidth
+            sx={{ mt: 3 }}
           >
-            <ListItemIcon
-              sx={{
-                minWidth: 0,
-                mr: isOpen ? 3 : 'auto',
-                justifyContent: 'center',
-              }}
-            >
-              <UploadIcon />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Charger PDF" 
-              sx={{ opacity: isOpen ? 1 : 0 }} 
-            />
-          </ListItemButton>
-        </ListItem>
-        
-        <input
-          type="file"
-          accept="application/pdf"
-          style={{ display: 'none' }}
-          ref={fileInputRef}
-          onChange={handleFileChange}
-        />
-        
-        <ListItem disablePadding sx={{ display: 'block' }}>
-          <ListItemButton
-            sx={{
-              minHeight: 48,
-              justifyContent: isOpen ? 'initial' : 'center',
-              px: 2.5,
-            }}
+            Supprimer la caméra
+          </Button>
+        </Box>
+      ) : (
+        <Box sx={{ p: 2, color: 'text.secondary', textAlign: 'center' }}>
+          <Typography variant="body2">
+            Sélectionnez une caméra pour l'éditer
+          </Typography>
+        </Box>
+      )}
+      
+      <Box sx={{ mt: 'auto', p: 2 }}>
+        <Divider sx={{ mb: 2 }} />
+        <Stack spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={<Eye size={16} />}
             onClick={previewPdf}
+            fullWidth
             disabled={!pdfFile}
           >
-            <ListItemIcon
-              sx={{
-                minWidth: 0,
-                mr: isOpen ? 3 : 'auto',
-                justifyContent: 'center',
-                color: !pdfFile ? 'action.disabled' : 'inherit'
-              }}
-            >
-              <EyeIcon />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Prévisualiser" 
-              sx={{ opacity: isOpen ? 1 : 0 }} 
-            />
-          </ListItemButton>
-        </ListItem>
-        
-        <ListItem disablePadding sx={{ display: 'block' }}>
-          <ListItemButton
-            sx={{
-              minHeight: 48,
-              justifyContent: isOpen ? 'initial' : 'center',
-              px: 2.5,
-            }}
+            Prévisualiser
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Save size={16} />}
             onClick={exportCurrentPage}
+            fullWidth
             disabled={!pdfFile}
           >
-            <ListItemIcon
-              sx={{
-                minWidth: 0,
-                mr: isOpen ? 3 : 'auto',
-                justifyContent: 'center',
-                color: !pdfFile ? 'action.disabled' : 'inherit'
-              }}
-            >
-              <DownloadIcon />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Exporter page" 
-              sx={{ opacity: isOpen ? 1 : 0 }} 
-            />
-          </ListItemButton>
-        </ListItem>
-        
-        <ListItem disablePadding sx={{ display: 'block' }}>
-          <ListItemButton
-            sx={{
-              minHeight: 48,
-              justifyContent: isOpen ? 'initial' : 'center',
-              px: 2.5,
-            }}
+            Exporter page
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Download size={16} />}
             onClick={exportPdf}
+            fullWidth
             disabled={!pdfFile}
           >
-            <ListItemIcon
-              sx={{
-                minWidth: 0,
-                mr: isOpen ? 3 : 'auto',
-                justifyContent: 'center',
-                color: !pdfFile ? 'action.disabled' : 'inherit'
-              }}
-            >
-              <DownloadIcon />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Exporter tout" 
-              sx={{ opacity: isOpen ? 1 : 0 }} 
-            />
-          </ListItemButton>
-        </ListItem>
-      </List>
-      
-      <Box sx={{ flexGrow: 1 }} />
-      
-      <Divider />
-      
-      <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
-        {isOpen ? (
-          <Typography variant="caption" color="text.secondary" align="center">
-            PlanCam v1.0.0
-          </Typography>
-        ) : (
-          <Typography variant="caption" color="text.secondary" align="center">
-            v1.0
-          </Typography>
-        )}
+            Exporter tout
+          </Button>
+        </Stack>
       </Box>
     </Drawer>
   );

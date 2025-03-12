@@ -1,61 +1,111 @@
-import React, { useState } from 'react';
-import { Box, TextField, Button, Paper } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { 
+  Dialog, 
+  DialogTitle, 
+  DialogContent, 
+  DialogActions, 
+  TextField, 
+  Button,
+  FormControlLabel,
+  Checkbox
+} from '@mui/material';
+import { useAppContext } from '../context/AppContext';
 
 interface CommentFormProps {
-  position: { x: number; y: number };
+  open: boolean;
   onClose: () => void;
-  onSubmit: (text: string) => void;
+  position: { x: number, y: number } | null;
 }
 
-const CommentForm: React.FC<CommentFormProps> = ({ position, onClose, onSubmit }) => {
+const CommentForm: React.FC<CommentFormProps> = ({ open, onClose, position }) => {
+  const { 
+    addComment, 
+    updateComment, 
+    selectedComment, 
+    comments,
+    selectedCamera
+  } = useAppContext();
+  
   const [text, setText] = useState('');
+  const [attachToCamera, setAttachToCamera] = useState(false);
   
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (text.trim()) {
-      onSubmit(text.trim());
+  // Si un commentaire est sélectionné, charger son texte
+  useEffect(() => {
+    if (selectedComment) {
+      const comment = comments.find(c => c.id === selectedComment);
+      if (comment) {
+        setText(comment.text);
+        setAttachToCamera(!!comment.cameraId);
+      }
+    } else {
       setText('');
+      setAttachToCamera(!!selectedCamera);
     }
+  }, [selectedComment, comments, selectedCamera]);
+
+  const handleSubmit = () => {
+    if (text.trim() === '') return;
+    
+    if (selectedComment) {
+      // Mise à jour d'un commentaire existant
+      updateComment(selectedComment, {
+        text,
+        cameraId: attachToCamera ? selectedCamera : undefined
+      });
+    } else if (position) {
+      // Création d'un nouveau commentaire
+      addComment(
+        position.x, 
+        position.y, 
+        text,
+        attachToCamera ? selectedCamera : undefined
+      );
+    }
+    
+    onClose();
   };
-  
+
   return (
-    <Paper
-      sx={{
-        position: 'absolute',
-        top: position.y,
-        left: position.x,
-        width: 300,
-        p: 2,
-        zIndex: 1000,
-        boxShadow: 3
-      }}
-    >
-      <form onSubmit={handleSubmit}>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>
+        {selectedComment ? 'Modifier le commentaire' : 'Ajouter un commentaire'}
+      </DialogTitle>
+      <DialogContent>
         <TextField
           autoFocus
+          margin="dense"
+          label="Texte du commentaire"
+          type="text"
           fullWidth
           multiline
-          rows={3}
-          variant="outlined"
-          placeholder="Ajouter un commentaire..."
+          rows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          sx={{ mb: 2 }}
+          variant="outlined"
         />
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-          <Button variant="outlined" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button 
-            variant="contained" 
-            type="submit"
-            disabled={!text.trim()}
-          >
-            Ajouter
-          </Button>
-        </Box>
-      </form>
-    </Paper>
+        
+        {selectedCamera && (
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={attachToCamera}
+                onChange={(e) => setAttachToCamera(e.target.checked)}
+                color="primary"
+              />
+            }
+            label="Attacher à la caméra sélectionnée"
+          />
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} color="primary">
+          Annuler
+        </Button>
+        <Button onClick={handleSubmit} color="primary" variant="contained">
+          {selectedComment ? 'Mettre à jour' : 'Ajouter'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 };
 

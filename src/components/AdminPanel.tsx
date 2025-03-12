@@ -1,313 +1,371 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Typography,
-  Button,
-  TextField,
-  Checkbox,
-  FormControlLabel,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
+import { 
+  Box, 
+  Typography, 
+  Paper, 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableContainer, 
+  TableHead, 
   TableRow,
-  IconButton,
+  Button,
   Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
   DialogTitle,
-  Alert,
-  CircularProgress,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControlLabel,
+  Checkbox,
+  IconButton,
   Tooltip,
-  Divider,
-  Tab,
-  Tabs,
-  Switch
+  Alert,
+  Snackbar
 } from '@mui/material';
-import { Delete as DeleteIcon, Edit as EditIcon, Refresh as RefreshIcon } from '@mui/icons-material';
+import { 
+  Add as AddIcon, 
+  Edit as EditIcon, 
+  Delete as DeleteIcon,
+  Check as CheckIcon,
+  Close as CloseIcon
+} from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
-import { supabase } from '../lib/supabase';
-
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`admin-tabpanel-${index}`}
-      aria-labelledby={`admin-tab-${index}`}
-      {...other}
-    >
-      {value === index && (
-        <Box sx={{ p: 3 }}>
-          {children}
-        </Box>
-      )}
-    </div>
-  );
-}
+import { User } from '../types/User';
 
 const AdminPanel: React.FC = () => {
   const { 
-    register,
-    currentUser, 
-    isSyncing
+    users, 
+    addUser, 
+    updateUser, 
+    deleteUser, 
+    currentUser,
+    isAdmin
   } = useAppContext();
-  
-  const [email, setEmail] = useState('');
+
+  const [openDialog, setOpenDialog] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [tabValue, setTabValue] = useState(0);
-  const [users, setUsers] = useState<any[]>([]);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [serviceKeyMissing, setServiceKeyMissing] = useState(true); // Définir à true par défaut puisque nous n'utilisons plus l'API admin
-  const [useAdminApi, setUseAdminApi] = useState(false); // Définir à false par défaut
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isUserAdmin, setIsUserAdmin] = useState(false);
+  const [error, setError] = useState('');
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
-  // Charger les utilisateurs
-  const loadUsers = async () => {
-    setIsLoadingUsers(true);
-    try {
-      // Puisque nous n'utilisons plus l'API admin, nous pouvons simplement afficher un message
-      setServiceKeyMissing(true);
-      setError('La gestion des utilisateurs via l\'API Admin n\'est pas disponible. Utilisez le dashboard Supabase pour gérer les utilisateurs.');
-      setIsLoadingUsers(false);
-      return;
-    } catch (error: any) {
-      console.error('Erreur lors du chargement des utilisateurs:', error);
-      setError('Impossible de charger la liste des utilisateurs: ' + error.message);
-    } finally {
-      setIsLoadingUsers(false);
-    }
-  };
-
-  // Charger les utilisateurs au montage
+  // Vérifier si l'utilisateur est administrateur
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (!isAdmin) {
+      setSnackbar({
+        open: true,
+        message: 'Vous n\'avez pas les droits d\'administration',
+        severity: 'error'
+      });
+    }
+  }, [isAdmin]);
 
-  // Gérer le changement d'onglet
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-
-  // Réinitialiser le formulaire
-  const resetForm = () => {
-    setEmail('');
+  const handleOpenAddDialog = () => {
+    setDialogMode('add');
+    setUsername('');
     setPassword('');
     setConfirmPassword('');
-    setIsAdmin(false);
+    setIsUserAdmin(false);
+    setError('');
+    setOpenDialog(true);
   };
 
-  // Gérer la soumission du formulaire
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setIsLoading(true);
+  const handleOpenEditDialog = (user: User) => {
+    setDialogMode('edit');
+    setSelectedUser(user);
+    setUsername(user.username);
+    setPassword('');
+    setConfirmPassword('');
+    setIsUserAdmin(user.isAdmin);
+    setError('');
+    setOpenDialog(true);
+  };
+
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+    setSelectedUser(null);
+  };
+
+  const validateForm = (): boolean => {
+    // Vérifier que le nom d'utilisateur n'est pas vide
+    if (!username.trim()) {
+      setError('Le nom d\'utilisateur est obligatoire');
+      return false;
+    }
+
+    // Vérifier que le nom d'utilisateur n'existe pas déjà (sauf pour l'édition du même utilisateur)
+    const userExists = users.some(u => 
+      u.username.toLowerCase() === username.toLowerCase() && 
+      (!selectedUser || u.id !== selectedUser.id)
+    );
     
-    try {
-      if (!email) {
-        setError('L\'email est requis');
-        setIsLoading(false);
-        return;
-      }
-      
+    if (userExists) {
+      setError('Ce nom d\'utilisateur existe déjà');
+      return false;
+    }
+
+    // Pour l'ajout ou si le mot de passe est modifié lors de l'édition
+    if (dialogMode === 'add' || password) {
+      // Vérifier que le mot de passe n'est pas vide
       if (!password) {
-        setError('Le mot de passe est requis');
-        setIsLoading(false);
-        return;
+        setError('Le mot de passe est obligatoire');
+        return false;
       }
-      
+
+      // Vérifier que le mot de passe a au moins 4 caractères
+      if (password.length < 4) {
+        setError('Le mot de passe doit contenir au moins 4 caractères');
+        return false;
+      }
+
+      // Vérifier que les mots de passe correspondent
       if (password !== confirmPassword) {
         setError('Les mots de passe ne correspondent pas');
-        setIsLoading(false);
-        return;
+        return false;
       }
-      
-      if (password.length < 6) {
-        setError('Le mot de passe doit contenir au moins 6 caractères');
-        setIsLoading(false);
-        return;
-      }
-      
-      // Utiliser l'API standard de Supabase
-      const success = await register(email, password, isAdmin);
-      
-      if (success) {
-        setSuccess(`L'utilisateur ${email} a été créé avec succès. Un email de confirmation a été envoyé.`);
-        resetForm();
-      } else {
-        setError('Erreur lors de la création de l\'utilisateur');
-      }
-    } catch (error: any) {
-      console.error('Erreur lors de la création de l\'utilisateur:', error);
-      setError(error.message || 'Une erreur est survenue lors de la création de l\'utilisateur');
-    } finally {
-      setIsLoading(false);
     }
+
+    return true;
+  };
+
+  const handleSubmit = () => {
+    if (!validateForm()) return;
+
+    try {
+      if (dialogMode === 'add') {
+        // Ajouter un nouvel utilisateur
+        addUser(username, password, isUserAdmin);
+        setSnackbar({
+          open: true,
+          message: 'Utilisateur ajouté avec succès',
+          severity: 'success'
+        });
+      } else if (selectedUser) {
+        // Mettre à jour un utilisateur existant
+        const updates: Partial<User> = {
+          username,
+          isAdmin: isUserAdmin
+        };
+        
+        // N'inclure le mot de passe que s'il a été modifié
+        if (password) {
+          updates.password = password;
+        }
+        
+        updateUser(selectedUser.id, updates);
+        setSnackbar({
+          open: true,
+          message: 'Utilisateur mis à jour avec succès',
+          severity: 'success'
+        });
+      }
+      
+      handleCloseDialog();
+    } catch (error) {
+      console.error('Erreur lors de la gestion de l\'utilisateur:', error);
+      setError('Une erreur est survenue. Veuillez réessayer.');
+    }
+  };
+
+  const handleDeleteUser = (user: User) => {
+    if (window.confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur ${user.username} ?`)) {
+      try {
+        deleteUser(user.id);
+        setSnackbar({
+          open: true,
+          message: 'Utilisateur supprimé avec succès',
+          severity: 'success'
+        });
+      } catch (error) {
+        console.error('Erreur lors de la suppression de l\'utilisateur:', error);
+        setSnackbar({
+          open: true,
+          message: 'Erreur lors de la suppression de l\'utilisateur',
+          severity: 'error'
+        });
+      }
+    }
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   // Formater la date pour l'affichage
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return 'Jamais';
-    return new Intl.DateTimeFormat('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(new Date(dateString));
+  const formatDate = (date: Date | undefined | string) => {
+    if (!date) return 'Jamais';
+    
+    // Si la date est une chaîne, la convertir en objet Date
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    
+    // Vérifier si la date est valide
+    if (isNaN(dateObj.getTime())) {
+      return 'Date invalide';
+    }
+    
+    return dateObj.toLocaleString('fr-FR');
   };
 
-  // Supprimer un utilisateur
-  const handleDeleteUser = async (userId: string) => {
-    try {
-      setIsLoading(true);
-      setError('La suppression d\'utilisateurs via l\'API n\'est pas disponible. Utilisez le dashboard Supabase pour gérer les utilisateurs.');
-      setIsLoading(false);
-    } catch (error: any) {
-      console.error('Erreur lors de la suppression de l\'utilisateur:', error);
-      setError(error.message || 'Une erreur est survenue lors de la suppression de l\'utilisateur');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  if (!isAdmin) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          Vous n'avez pas les droits d'accès à cette page.
+        </Alert>
+      </Box>
+    );
+  }
 
   return (
-    <Box sx={{ p: 3, maxWidth: '1200px', mx: 'auto' }}>
-      <Typography variant="h5" component="h2" sx={{ mb: 3 }}>
-        Administration
-      </Typography>
-      
-      <Alert severity="info" sx={{ mb: 3 }}>
-        Pour une gestion complète des utilisateurs, veuillez utiliser le dashboard Supabase. 
-        Cette interface permet uniquement de créer de nouveaux utilisateurs.
-      </Alert>
-      
-      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs value={tabValue} onChange={handleTabChange} aria-label="admin tabs">
-          <Tab label="Ajouter un utilisateur" />
-          <Tab label="Gérer les utilisateurs" />
-        </Tabs>
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1">
+          Gestion des utilisateurs
+        </Typography>
+        <Button 
+          variant="contained" 
+          startIcon={<AddIcon />}
+          onClick={handleOpenAddDialog}
+        >
+          Ajouter un utilisateur
+        </Button>
       </Box>
-      
-      <TabPanel value={tabValue} index={0}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
-            Ajouter un utilisateur
-          </Typography>
-          
+
+      <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+        <TableContainer sx={{ maxHeight: 'calc(100vh - 250px)' }}>
+          <Table stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell>Nom d'utilisateur</TableCell>
+                <TableCell>Administrateur</TableCell>
+                <TableCell>Créé le</TableCell>
+                <TableCell>Dernière connexion</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.id} hover>
+                  <TableCell>{user.username}</TableCell>
+                  <TableCell>
+                    {user.isAdmin ? (
+                      <CheckIcon color="success" />
+                    ) : (
+                      <CloseIcon color="error" />
+                    )}
+                  </TableCell>
+                  <TableCell>{formatDate(user.createdAt)}</TableCell>
+                  <TableCell>{formatDate(user.lastLogin)}</TableCell>
+                  <TableCell align="right">
+                    <Tooltip title="Modifier">
+                      <IconButton 
+                        color="primary" 
+                        onClick={() => handleOpenEditDialog(user)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Supprimer">
+                      <IconButton 
+                        color="error" 
+                        onClick={() => handleDeleteUser(user)}
+                        disabled={user.username === 'Dali' || (currentUser && user.id === currentUser.id)}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {users.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} align="center">
+                    Aucun utilisateur trouvé
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+      {/* Dialogue d'ajout/modification d'utilisateur */}
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {dialogMode === 'add' ? 'Ajouter un utilisateur' : 'Modifier un utilisateur'}
+        </DialogTitle>
+        <DialogContent>
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
           )}
-          
-          {success && (
-            <Alert severity="success" sx={{ mb: 2 }}>
-              {success}
-            </Alert>
-          )}
-          
-          <Box component="form" onSubmit={handleSubmit}>
-            <TextField
-              label="Email"
-              type="email"
-              variant="outlined"
-              fullWidth
-              margin="normal"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isLoading}
-              required
-            />
-            
-            <TextField
-              label="Mot de passe"
-              type="password"
-              variant="outlined"
-              fullWidth
-              margin="normal"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isLoading}
-              required
-            />
-            
-            <TextField
-              label="Confirmer le mot de passe"
-              type="password"
-              variant="outlined"
-              fullWidth
-              margin="normal"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              disabled={isLoading}
-              required
-            />
-            
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={isAdmin}
-                  onChange={(e) => setIsAdmin(e.target.checked)}
-                  disabled={isLoading}
-                />
-              }
-              label="Administrateur"
-              sx={{ mt: 1 }}
-            />
-            
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={isLoading}
-              sx={{ mt: 2 }}
-            >
-              {isLoading ? <CircularProgress size={24} /> : 'Ajouter'}
-            </Button>
-          </Box>
-          
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Un email de confirmation sera envoyé à l'utilisateur.
-          </Alert>
-        </Paper>
-      </TabPanel>
-      
-      <TabPanel value={tabValue} index={1}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" component="h3">
-            Liste des utilisateurs
-          </Typography>
-        </Box>
-        
-        <Alert severity="info" sx={{ mb: 3 }}>
-          La gestion des utilisateurs via l'API n'est pas disponible. Veuillez utiliser le dashboard Supabase pour gérer les utilisateurs.
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Nom d'utilisateur"
+            type="text"
+            fullWidth
+            variant="outlined"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            margin="dense"
+            label={dialogMode === 'edit' ? 'Nouveau mot de passe (laisser vide pour ne pas changer)' : 'Mot de passe'}
+            type="password"
+            fullWidth
+            variant="outlined"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            sx={{ mb: 2 }}
+            required={dialogMode === 'add'}
+          />
+          <TextField
+            margin="dense"
+            label="Confirmer le mot de passe"
+            type="password"
+            fullWidth
+            variant="outlined"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            sx={{ mb: 2 }}
+            required={dialogMode === 'add' || password.length > 0}
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={isUserAdmin}
+                onChange={(e) => setIsUserAdmin(e.target.checked)}
+                disabled={selectedUser?.username === 'Dali'} // Empêcher de modifier le statut admin de l'utilisateur principal
+              />
+            }
+            label="Administrateur"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Annuler</Button>
+          <Button onClick={handleSubmit} variant="contained">
+            {dialogMode === 'add' ? 'Ajouter' : 'Enregistrer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar pour les notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
+          {snackbar.message}
         </Alert>
-        
-        <Button 
-          variant="contained" 
-          href="https://app.supabase.com/project/kvoezelnkzfvyikicjyr/auth/users" 
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Ouvrir le dashboard Supabase
-        </Button>
-      </TabPanel>
+      </Snackbar>
     </Box>
   );
 };
