@@ -29,7 +29,7 @@ import {
 } from '@mui/material';
 import { Delete as DeleteIcon, Edit as EditIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
-import { supabase, getServiceSupabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -73,31 +73,19 @@ const AdminPanel: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [serviceKeyMissing, setServiceKeyMissing] = useState(false);
-  const [useAdminApi, setUseAdminApi] = useState(true);
+  const [serviceKeyMissing, setServiceKeyMissing] = useState(true); // Définir à true par défaut puisque nous n'utilisons plus l'API admin
+  const [useAdminApi, setUseAdminApi] = useState(false); // Définir à false par défaut
   const [confirmPassword, setConfirmPassword] = useState('');
 
   // Charger les utilisateurs
   const loadUsers = async () => {
     setIsLoadingUsers(true);
     try {
-      // Utiliser le client avec la clé de service pour les opérations admin
-      const serviceClient = getServiceSupabase();
-      
-      if (!serviceClient) {
-        setServiceKeyMissing(true);
-        setError('Clé de service Supabase manquante. Impossible de charger les utilisateurs.');
-        setIsLoadingUsers(false);
-        return;
-      }
-      
-      const { data, error } = await serviceClient.auth.admin.listUsers();
-      
-      if (error) throw error;
-      
-      if (data) {
-        setUsers(data.users);
-      }
+      // Puisque nous n'utilisons plus l'API admin, nous pouvons simplement afficher un message
+      setServiceKeyMissing(true);
+      setError('La gestion des utilisateurs via l\'API Admin n\'est pas disponible. Utilisez le dashboard Supabase pour gérer les utilisateurs.');
+      setIsLoadingUsers(false);
+      return;
     } catch (error: any) {
       console.error('Erreur lors du chargement des utilisateurs:', error);
       setError('Impossible de charger la liste des utilisateurs: ' + error.message);
@@ -156,49 +144,14 @@ const AdminPanel: React.FC = () => {
         return;
       }
       
-      if (useAdminApi) {
-        // Utiliser le client avec la clé de service pour créer un utilisateur
-        const serviceClient = getServiceSupabase();
-        
-        if (!serviceClient) {
-          setServiceKeyMissing(true);
-          setError('Clé de service Supabase manquante. Impossible de créer un utilisateur avec l\'API Admin.');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Créer un nouvel utilisateur avec le client de service
-        const { data, error: createError } = await serviceClient.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true, // Confirmer automatiquement l'email
-          user_metadata: { is_admin: isAdmin }
-        });
-        
-        if (createError) throw createError;
-        
-        if (data.user) {
-          setSuccess(`L'utilisateur ${email} a été créé avec succès`);
-          resetForm();
-          
-          // Recharger la liste des utilisateurs
-          await loadUsers();
-        } else {
-          setError('Erreur lors de la création de l\'utilisateur: Aucune donnée retournée');
-        }
+      // Utiliser l'API standard de Supabase
+      const success = await register(email, password, isAdmin);
+      
+      if (success) {
+        setSuccess(`L'utilisateur ${email} a été créé avec succès. Un email de confirmation a été envoyé.`);
+        resetForm();
       } else {
-        // Utiliser l'API standard de Supabase
-        const success = await register(email, password, isAdmin);
-        
-        if (success) {
-          setSuccess(`L'utilisateur ${email} a été créé avec succès. Un email de confirmation a été envoyé.`);
-          resetForm();
-          
-          // Recharger la liste des utilisateurs
-          await loadUsers();
-        } else {
-          setError('Erreur lors de la création de l\'utilisateur');
-        }
+        setError('Erreur lors de la création de l\'utilisateur');
       }
     } catch (error: any) {
       console.error('Erreur lors de la création de l\'utilisateur:', error);
@@ -224,25 +177,8 @@ const AdminPanel: React.FC = () => {
   const handleDeleteUser = async (userId: string) => {
     try {
       setIsLoading(true);
-      
-      // Utiliser le client avec la clé de service pour supprimer un utilisateur
-      const serviceClient = getServiceSupabase();
-      
-      if (!serviceClient) {
-        setServiceKeyMissing(true);
-        setError('Clé de service Supabase manquante. Impossible de supprimer l\'utilisateur.');
-        setIsLoading(false);
-        return;
-      }
-      
-      const { error } = await serviceClient.auth.admin.deleteUser(userId);
-      
-      if (error) throw error;
-      
-      setSuccess('Utilisateur supprimé avec succès');
-      
-      // Recharger la liste des utilisateurs
-      await loadUsers();
+      setError('La suppression d\'utilisateurs via l\'API n\'est pas disponible. Utilisez le dashboard Supabase pour gérer les utilisateurs.');
+      setIsLoading(false);
     } catch (error: any) {
       console.error('Erreur lors de la suppression de l\'utilisateur:', error);
       setError(error.message || 'Une erreur est survenue lors de la suppression de l\'utilisateur');
@@ -257,12 +193,10 @@ const AdminPanel: React.FC = () => {
         Administration
       </Typography>
       
-      {serviceKeyMissing && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          La clé de service Supabase n'est pas configurée. Certaines fonctionnalités d'administration ne seront pas disponibles.
-          Veuillez ajouter la clé de service dans le fichier .env (SUPABASE_SERVICE_KEY).
-        </Alert>
-      )}
+      <Alert severity="info" sx={{ mb: 3 }}>
+        Pour une gestion complète des utilisateurs, veuillez utiliser le dashboard Supabase. 
+        Cette interface permet uniquement de créer de nouveaux utilisateurs.
+      </Alert>
       
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs value={tabValue} onChange={handleTabChange} aria-label="admin tabs">
@@ -288,20 +222,6 @@ const AdminPanel: React.FC = () => {
               {success}
             </Alert>
           )}
-          
-          <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-            <Typography variant="body2" sx={{ mr: 1 }}>
-              API Standard
-            </Typography>
-            <Switch
-              checked={useAdminApi}
-              onChange={(e) => setUseAdminApi(e.target.checked)}
-              inputProps={{ 'aria-label': 'toggle API mode' }}
-            />
-            <Typography variant="body2" sx={{ ml: 1 }}>
-              API Admin
-            </Typography>
-          </Box>
           
           <Box component="form" onSubmit={handleSubmit}>
             <TextField
@@ -362,17 +282,9 @@ const AdminPanel: React.FC = () => {
             </Button>
           </Box>
           
-          {!useAdminApi && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              En utilisant l'API standard, un email de confirmation sera envoyé à l'utilisateur.
-            </Alert>
-          )}
-          
-          {useAdminApi && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              En utilisant l'API Admin, l'utilisateur sera créé avec l'email déjà confirmé et pourra se connecter immédiatement.
-            </Alert>
-          )}
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Un email de confirmation sera envoyé à l'utilisateur.
+          </Alert>
         </Paper>
       </TabPanel>
       
@@ -381,82 +293,20 @@ const AdminPanel: React.FC = () => {
           <Typography variant="h6" component="h3">
             Liste des utilisateurs
           </Typography>
-          
-          <Button 
-            variant="outlined" 
-            startIcon={<RefreshIcon />}
-            onClick={loadUsers}
-            disabled={isLoadingUsers}
-          >
-            Actualiser
-          </Button>
         </Box>
         
-        {isLoadingUsers ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Email</TableCell>
-                  <TableCell>Rôle</TableCell>
-                  <TableCell>Créé le</TableCell>
-                  <TableCell>Dernière connexion</TableCell>
-                  <TableCell>Email confirmé</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {users.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center">
-                      Aucun utilisateur trouvé
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  users.map((user) => (
-                    <TableRow key={user.id} sx={{ 
-                      backgroundColor: user.id === currentUser?.id ? 'rgba(25, 118, 210, 0.08)' : 'inherit'
-                    }}>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>
-                        {user.user_metadata?.is_admin ? 'Administrateur' : 'Utilisateur'}
-                      </TableCell>
-                      <TableCell>{formatDate(user.created_at)}</TableCell>
-                      <TableCell>{formatDate(user.last_sign_in_at)}</TableCell>
-                      <TableCell>{user.email_confirmed_at ? 'Oui' : 'Non'}</TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="Modifier">
-                          <IconButton disabled>
-                            <EditIcon />
-                          </IconButton>
-                        </Tooltip>
-                        
-                        <Tooltip title="Supprimer">
-                          <span>
-                            <IconButton 
-                              onClick={() => handleDeleteUser(user.id)}
-                              disabled={user.id === currentUser?.id || isLoading}
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
+        <Alert severity="info" sx={{ mb: 3 }}>
+          La gestion des utilisateurs via l'API n'est pas disponible. Veuillez utiliser le dashboard Supabase pour gérer les utilisateurs.
+        </Alert>
         
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          Note: Vous ne pouvez pas supprimer votre propre compte.
-        </Typography>
+        <Button 
+          variant="contained" 
+          href="https://app.supabase.com/project/kvoezelnkzfvyikicjyr/auth/users" 
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Ouvrir le dashboard Supabase
+        </Button>
       </TabPanel>
     </Box>
   );
