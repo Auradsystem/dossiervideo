@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
 import { Comment } from '../types/Comment';
 import { User } from '../types/User';
+import { supabase, supabaseAuth, initializeDefaultUsers, getServiceSupabase } from '../lib/supabase';
 
 // Interface pour stocker les caméras par page
 interface PageCameras {
@@ -31,7 +32,7 @@ interface AppContextType {
   totalPages: number;
   setTotalPages: (pages: number) => void;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   exportPdf: () => void;
   exportCurrentPage: () => void;
@@ -47,7 +48,7 @@ interface AppContextType {
   selectedIconType: string;
   setSelectedIconType: (type: string) => void;
   clearCurrentPage: () => void;
-  // Nouvelles fonctionnalités pour les commentaires
+  // Fonctionnalités pour les commentaires
   comments: Comment[];
   addComment: (x: number, y: number, text: string, cameraId?: string) => void;
   updateComment: (id: string, updates: Partial<Comment>) => void;
@@ -56,15 +57,15 @@ interface AppContextType {
   setSelectedComment: (id: string | null) => void;
   isAddingComment: boolean;
   setIsAddingComment: (isAdding: boolean) => void;
-  // Nouvelles fonctionnalités pour la gestion des utilisateurs
+  // Fonctionnalités pour la gestion des utilisateurs
   currentUser: User | null;
   isAdmin: boolean;
-  users: User[];
-  addUser: (username: string, password: string, isAdmin: boolean) => void;
-  updateUser: (id: string, updates: Partial<User>) => void;
-  deleteUser: (id: string) => void;
+  register: (email: string, password: string, isAdmin: boolean) => Promise<boolean>;
   isAdminMode: boolean;
   setIsAdminMode: (isAdmin: boolean) => void;
+  isSyncing: boolean;
+  lastSyncTime: Date | null;
+  syncError: string | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -99,16 +100,6 @@ const safeLocalStorage = {
   }
 };
 
-// Fonction pour convertir les dates en chaînes et vice-versa
-const dateReviver = (key: string, value: any) => {
-  // Vérifier si la valeur ressemble à une date ISO
-  const dateFormat = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z$/;
-  if (typeof value === 'string' && dateFormat.test(value)) {
-    return new Date(value);
-  }
-  return value;
-};
-
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   // Stockage des caméras par page
@@ -124,16 +115,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
   
-  // Nouveaux états pour les commentaires
+  // États pour les commentaires
   const [pageComments, setPageComments] = useState<PageComments>({});
   const [selectedComment, setSelectedComment] = useState<string | null>(null);
   const [isAddingComment, setIsAddingComment] = useState<boolean>(false);
 
-  // Nouveaux états pour la gestion des utilisateurs
-  const [users, setUsers] = useState<User[]>([]);
+  // États pour la gestion des utilisateurs
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
+  
+  // États pour la synchronisation
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Caméras de la page courante
   const cameras = pageCameras[page] || [];
@@ -141,43 +136,58 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Commentaires de la page courante
   const comments = pageComments[page] || [];
 
-  // Initialisation des utilisateurs
+  // Initialiser Supabase au démarrage
   useEffect(() => {
-    // Récupérer les utilisateurs du localStorage
-    const storedUsers = safeLocalStorage.getItem('plancam_users');
-    if (storedUsers) {
+    const initApp = async () => {
       try {
-        // Utiliser le reviver pour gérer correctement les dates
-        const parsedUsers = JSON.parse(storedUsers, dateReviver);
-        setUsers(parsedUsers);
+        // Vérifier s'il y a une session active
+        const { session, user, error } = await supabaseAuth.getSession();
+        
+        if (session && user) {
+          setIsAuthenticated(true);
+          setCurrentUser(user);
+          setIsAdmin(user.isAdmin);
+          console.log('Session restaurée:', user);
+        } else {
+          // Initialiser les utilisateurs par défaut si nécessaire
+          await initializeDefaultUsers();
+        }
       } catch (error) {
-        console.error('Erreur lors de la récupération des utilisateurs:', error);
-        // Réinitialiser si erreur
-        setUsers([]);
+        console.error('Erreur lors de l\'initialisation de l\'application:', error);
       }
-    } else {
-      // Créer l'utilisateur admin par défaut si aucun utilisateur n'existe
-      const adminUser: User = {
-        id: uuidv4(),
-        username: 'Dali',
-        password: 'Dali',
-        isAdmin: true,
-        createdAt: new Date()
-      };
-      
-      // Ajouter l'utilisateur par défaut (xcel/video)
-      const defaultUser: User = {
-        id: uuidv4(),
-        username: 'xcel',
-        password: 'video',
-        isAdmin: false,
-        createdAt: new Date()
-      };
-      
-      const initialUsers = [adminUser, defaultUser];
-      setUsers(initialUsers);
-      safeLocalStorage.setItem('plancam_users', JSON.stringify(initialUsers));
-    }
+    };
+    
+    initApp();
+    
+    // Écouter les changements d'authentification
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Événement d\'authentification:', event);
+        
+        if (event === 'SIGNED_IN' && session) {
+          // Récupérer les informations utilisateur complètes
+          const { user, error } = await supabaseAuth.getSession();
+          
+          if (user && !error) {
+            setIsAuthenticated(true);
+            setCurrentUser(user);
+            setIsAdmin(user.isAdmin);
+            console.log('Utilisateur connecté:', user);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          setIsAdmin(false);
+          setIsAdminMode(false);
+          console.log('Utilisateur déconnecté');
+        }
+      }
+    );
+    
+    // Nettoyer l'écouteur
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   // Journalisation pour le débogage
@@ -193,23 +203,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSelectedComment(null);
   }, [page]);
 
-  // Check for existing authentication on mount
-  useEffect(() => {
-    const auth = safeLocalStorage.getItem('plancam_auth');
-    if (auth) {
-      try {
-        // Utiliser le reviver pour gérer correctement les dates
-        const authData = JSON.parse(auth, dateReviver);
-        setIsAuthenticated(true);
-        setCurrentUser(authData.user);
-        setIsAdmin(authData.user.isAdmin);
-      } catch (error) {
-        console.error('Erreur lors de la récupération de l\'authentification:', error);
-        safeLocalStorage.removeItem('plancam_auth');
-      }
-    }
-  }, []);
-
   // Cleanup preview URL when component unmounts
   useEffect(() => {
     return () => {
@@ -219,108 +212,73 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [previewUrl]);
 
-  // Sauvegarder les utilisateurs dans le localStorage à chaque modification
-  useEffect(() => {
-    if (users.length > 0) {
-      safeLocalStorage.setItem('plancam_users', JSON.stringify(users));
-    }
-  }, [users]);
-
-  const login = (username: string, password: string): boolean => {
-    // Rechercher l'utilisateur
-    const user = users.find(u => 
-      u.username.toLowerCase() === username.toLowerCase() && 
-      u.password === password
-    );
-    
-    if (user) {
-      // Mettre à jour la date de dernière connexion
-      const updatedUser = {
-        ...user,
-        lastLogin: new Date()
-      };
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      setIsSyncing(true);
       
-      // Mettre à jour l'utilisateur dans la liste
-      setUsers(users.map(u => u.id === user.id ? updatedUser : u));
+      // Connexion via Supabase
+      const { user, error } = await supabaseAuth.signIn(email, password);
       
-      // Définir l'utilisateur courant et l'état d'authentification
-      setCurrentUser(updatedUser);
-      setIsAuthenticated(true);
-      setIsAdmin(updatedUser.isAdmin);
-      
-      // Stocker l'authentification dans le localStorage
-      const authSuccess = safeLocalStorage.setItem('plancam_auth', JSON.stringify({
-        user: updatedUser
-      }));
-      
-      // Même si localStorage échoue, l'authentification en mémoire fonctionne
-      if (!authSuccess) {
-        console.warn('Impossible de stocker l\'authentification dans localStorage, mais la session est active en mémoire');
+      if (error) {
+        console.error('Erreur de connexion:', error);
+        return false;
       }
       
-      return true;
-    }
-    
-    return false;
-  };
-
-  const logout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    setIsAdmin(false);
-    setIsAdminMode(false);
-    safeLocalStorage.removeItem('plancam_auth');
-  };
-
-  // Fonctions de gestion des utilisateurs
-  const addUser = (username: string, password: string, isAdmin: boolean) => {
-    const newUser: User = {
-      id: uuidv4(),
-      username,
-      password,
-      isAdmin,
-      createdAt: new Date()
-    };
-    
-    setUsers([...users, newUser]);
-  };
-
-  const updateUser = (id: string, updates: Partial<User>) => {
-    setUsers(users.map(user => {
-      if (user.id === id) {
-        return { ...user, ...updates };
+      if (user) {
+        // L'authentification est gérée par l'écouteur onAuthStateChange
+        console.log('Connexion réussie');
+        return true;
       }
-      return user;
-    }));
-    
-    // Si l'utilisateur courant est mis à jour, mettre à jour également l'utilisateur courant
-    if (currentUser && currentUser.id === id) {
-      const updatedCurrentUser = { ...currentUser, ...updates };
-      setCurrentUser(updatedCurrentUser);
-      setIsAdmin(updatedCurrentUser.isAdmin);
       
-      // Mettre à jour le localStorage
-      safeLocalStorage.setItem('plancam_auth', JSON.stringify({
-        user: updatedCurrentUser
-      }));
+      return false;
+    } catch (error) {
+      console.error('Erreur lors de la connexion:', error);
+      return false;
+    } finally {
+      setIsSyncing(false);
     }
   };
 
-  const deleteUser = (id: string) => {
-    // Empêcher la suppression de l'utilisateur admin principal
-    const userToDelete = users.find(u => u.id === id);
-    if (userToDelete && userToDelete.username === 'Dali') {
-      alert('Impossible de supprimer l\'administrateur principal');
-      return;
+  const logout = async () => {
+    try {
+      setIsSyncing(true);
+      
+      // Déconnexion de Supabase
+      await supabaseAuth.signOut();
+      
+      // La déconnexion est gérée par l'écouteur onAuthStateChange
+    } catch (error) {
+      console.error('Erreur lors de la déconnexion:', error);
+    } finally {
+      setIsSyncing(false);
     }
-    
-    // Empêcher la suppression de l'utilisateur courant
-    if (currentUser && currentUser.id === id) {
-      alert('Impossible de supprimer votre propre compte');
-      return;
+  };
+
+  // Fonction pour inscrire un nouvel utilisateur
+  const register = async (email: string, password: string, isAdmin: boolean): Promise<boolean> => {
+    try {
+      setIsSyncing(true);
+      
+      // Utiliser l'API standard de Supabase pour l'inscription
+      const { user, error } = await supabaseAuth.signUp(email, password, { is_admin: isAdmin });
+      
+      if (error) {
+        console.error('Erreur d\'inscription:', error);
+        return false;
+      }
+      
+      if (user) {
+        console.log('Inscription réussie via l\'API standard');
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Erreur lors de l\'inscription:', error);
+      return false;
+    } finally {
+      setIsSyncing(false);
     }
-    
-    setUsers(users.filter(user => user.id !== id));
   };
 
   const addCamera = (x: number, y: number, type: CameraType) => {
@@ -436,7 +394,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     console.log(`Toutes les caméras et commentaires de la page ${page} ont été supprimés`);
   };
 
-  // Nouvelles fonctions pour gérer les commentaires
+  // Fonctions pour gérer les commentaires
   const addComment = (x: number, y: number, text: string, cameraId?: string) => {
     const newComment: Comment = {
       id: uuidv4(),
@@ -668,7 +626,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Nouvelle fonction pour exporter toutes les pages en un seul PDF
+  // Fonction pour exporter toutes les pages en un seul PDF
   const exportPdf = async () => {
     console.log('Export de toutes les pages en un seul PDF');
     
@@ -795,7 +753,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       selectedIconType,
       setSelectedIconType,
       clearCurrentPage,
-      // Nouvelles valeurs pour les commentaires
+      // Valeurs pour les commentaires
       comments,
       addComment,
       updateComment,
@@ -804,15 +762,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedComment,
       isAddingComment,
       setIsAddingComment,
-      // Nouvelles valeurs pour la gestion des utilisateurs
+      // Valeurs pour la gestion des utilisateurs
       currentUser,
       isAdmin,
-      users,
-      addUser,
-      updateUser,
-      deleteUser,
+      register,
       isAdminMode,
-      setIsAdminMode
+      setIsAdminMode,
+      // Valeurs pour la synchronisation
+      isSyncing,
+      lastSyncTime,
+      syncError
     }}>
       {children}
     </AppContext.Provider>

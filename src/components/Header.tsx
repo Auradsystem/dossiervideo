@@ -5,43 +5,44 @@ import {
   Typography, 
   Button, 
   IconButton, 
+  Box, 
   Menu, 
   MenuItem, 
-  Divider,
-  Box,
   Tooltip,
-  Avatar,
-  ListItemIcon
+  Badge,
+  CircularProgress
 } from '@mui/material';
-import {
-  Menu as MenuIcon,
-  Logout as LogoutIcon,
+import { 
+  Menu as MenuIcon, 
+  AccountCircle, 
   AdminPanelSettings as AdminIcon,
-  AccountCircle as AccountIcon,
-  Settings as SettingsIcon
+  Sync as SyncIcon
 } from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
 interface HeaderProps {
-  toggleSidebar?: () => void;
+  toggleSidebar: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
   const { 
+    isAuthenticated, 
     logout, 
-    isAdmin, 
     currentUser, 
+    isAdmin, 
     isAdminMode, 
-    setIsAdminMode 
+    setIsAdminMode,
+    syncWithCloud,
+    isSyncing,
+    syncError
   } = useAppContext();
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const open = Boolean(anchorEl);
   
-  const handleClick = (event: React.MouseEvent<HTMLElement>) => {
+  const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
-  
+
   const handleClose = () => {
     setAnchorEl(null);
   };
@@ -51,128 +52,101 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
     logout();
   };
   
-  const handleAdminMode = () => {
+  const handleToggleAdminMode = () => {
     handleClose();
     setIsAdminMode(!isAdminMode);
+  };
+  
+  const handleSync = async () => {
+    try {
+      await syncWithCloud();
+    } catch (error) {
+      console.error('Erreur lors de la synchronisation:', error);
+    }
   };
 
   return (
     <AppBar position="static">
       <Toolbar>
-        {toggleSidebar && (
-          <IconButton
-            size="large"
-            edge="start"
-            color="inherit"
-            aria-label="menu"
-            sx={{ mr: 2 }}
-            onClick={toggleSidebar}
-          >
-            <MenuIcon />
-          </IconButton>
-        )}
+        <IconButton
+          size="large"
+          edge="start"
+          color="inherit"
+          aria-label="menu"
+          sx={{ mr: 2 }}
+          onClick={toggleSidebar}
+        >
+          <MenuIcon />
+        </IconButton>
         
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           PlanCam
         </Typography>
         
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          {isAdminMode && isAdmin && (
-            <Button 
-              color="inherit" 
-              onClick={() => setIsAdminMode(false)}
-              sx={{ mr: 2 }}
-            >
-              Quitter le mode admin
-            </Button>
-          )}
-          
-          <Tooltip title="Paramètres du compte">
-            <IconButton
-              onClick={handleClick}
-              size="small"
-              sx={{ ml: 2 }}
-              aria-controls={open ? 'account-menu' : undefined}
-              aria-haspopup="true"
-              aria-expanded={open ? 'true' : undefined}
-            >
-              <Avatar sx={{ width: 32, height: 32, bgcolor: isAdmin ? 'secondary.main' : 'primary.main' }}>
-                {currentUser?.username.charAt(0).toUpperCase() || 'U'}
-              </Avatar>
-            </IconButton>
-          </Tooltip>
-        </Box>
-        
-        <Menu
-          anchorEl={anchorEl}
-          id="account-menu"
-          open={open}
-          onClose={handleClose}
-          onClick={handleClose}
-          PaperProps={{
-            elevation: 0,
-            sx: {
-              overflow: 'visible',
-              filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
-              mt: 1.5,
-              '& .MuiAvatar-root': {
-                width: 32,
-                height: 32,
-                ml: -0.5,
-                mr: 1,
-              },
-              '&:before': {
-                content: '""',
-                display: 'block',
-                position: 'absolute',
-                top: 0,
-                right: 14,
-                width: 10,
-                height: 10,
-                bgcolor: 'background.paper',
-                transform: 'translateY(-50%) rotate(45deg)',
-                zIndex: 0,
-              },
-            },
-          }}
-          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-        >
-          <MenuItem onClick={handleClose}>
-            <ListItemIcon>
-              <AccountIcon fontSize="small" />
-            </ListItemIcon>
-            {currentUser?.username || 'Utilisateur'}
-            {isAdmin && ' (Admin)'}
-          </MenuItem>
-          
-          <Divider />
-          
-          {isAdmin && !isAdminMode && (
-            <MenuItem onClick={handleAdminMode}>
-              <ListItemIcon>
-                <AdminIcon fontSize="small" />
-              </ListItemIcon>
-              Mode administrateur
-            </MenuItem>
-          )}
-          
-          {isAdmin && isAdminMode && (
-            <MenuItem onClick={handleAdminMode}>
-              <ListItemIcon>
-                <SettingsIcon fontSize="small" />
-              </ListItemIcon>
-              Mode normal
-            </MenuItem>
-          )}
-          
-          <MenuItem onClick={handleLogout}>
-            <ListItemIcon>
-              <LogoutIcon fontSize="small" />
-            </ListItemIcon>
-            Déconnexion
-          </MenuItem>
-        </Menu>
+        {isAuthenticated && (
+          <>
+            <Tooltip title="Synchroniser avec le cloud">
+              <IconButton 
+                color="inherit" 
+                onClick={handleSync}
+                disabled={isSyncing}
+                sx={{ mr: 1 }}
+              >
+                {isSyncing ? (
+                  <CircularProgress color="inherit" size={24} />
+                ) : (
+                  <Badge color={syncError ? "error" : "default"} variant="dot">
+                    <SyncIcon />
+                  </Badge>
+                )}
+              </IconButton>
+            </Tooltip>
+            
+            {isAdmin && (
+              <Tooltip title={isAdminMode ? "Mode normal" : "Mode administrateur"}>
+                <IconButton 
+                  color={isAdminMode ? "secondary" : "inherit"} 
+                  onClick={handleToggleAdminMode}
+                  sx={{ mr: 1 }}
+                >
+                  <AdminIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+            
+            <Box>
+              <Button 
+                color="inherit" 
+                onClick={handleMenu}
+                startIcon={<AccountCircle />}
+              >
+                {currentUser?.username || 'Utilisateur'}
+              </Button>
+              <Menu
+                id="menu-appbar"
+                anchorEl={anchorEl}
+                anchorOrigin={{
+                  vertical: 'bottom',
+                  horizontal: 'right',
+                }}
+                keepMounted
+                transformOrigin={{
+                  vertical: 'top',
+                  horizontal: 'right',
+                }}
+                open={Boolean(anchorEl)}
+                onClose={handleClose}
+              >
+                {isAdmin && (
+                  <MenuItem onClick={handleToggleAdminMode}>
+                    {isAdminMode ? "Quitter le mode admin" : "Mode administrateur"}
+                  </MenuItem>
+                )}
+                <MenuItem onClick={handleLogout}>Se déconnecter</MenuItem>
+              </Menu>
+            </Box>
+          </>
+        )}
       </Toolbar>
     </AppBar>
   );
