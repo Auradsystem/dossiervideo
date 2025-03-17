@@ -1,422 +1,562 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Box, Paper, Typography, IconButton, Slider, Button } from '@mui/material';
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Trash2, MessageSquare } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
-import { Stage, Layer } from 'react-konva';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Stage, Layer, Image as KonvaImage, Group, Rect, Text } from 'react-konva';
+import { Box, CircularProgress, IconButton, Tooltip, Paper, Zoom, Slider, Typography } from '@mui/material';
+import { ZoomIn, ZoomOut, ChevronsUpDown, MousePointer, Camera, StickyNote, Image } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import CameraObject from './CameraObject';
+import LogoObject from './LogoObject';
 import CommentObject from './CommentObject';
-import CommentForm from './CommentForm';
-
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+import PDFComponents from './PDFComponents';
+import LogoSelector from './LogoSelector';
 
 const PdfViewer: React.FC = () => {
   const { 
     pdfFile, 
-    cameras, 
-    addCamera, 
-    scale, 
-    setScale,
-    page,
-    setPage,
-    totalPages,
-    setTotalPages,
-    clearCurrentPage,
+    numPages, 
+    setNumPages, 
+    currentPage, 
+    setCurrentPage,
+    cameras,
+    logos,
     comments,
-    isAddingComment,
-    setIsAddingComment,
+    selectedCamera,
+    selectedLogo,
     selectedComment,
-    setSelectedComment,
-    deleteComment
+    addCamera,
+    addLogo,
+    addComment,
+    namingPattern,
+    nextCameraNumber,
+    setNextCameraNumber,
+    selectedIconType
   } = useAppContext();
   
-  const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
-  const [pdfPageRendered, setPdfPageRendered] = useState<HTMLCanvasElement | null>(null);
-  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [commentPosition, setCommentPosition] = useState<{ x: number, y: number } | null>(null);
-  const [commentFormOpen, setCommentFormOpen] = useState<boolean>(false);
+  const [pdfDimensions, setPdfDimensions] = useState({ width: 0, height: 0 });
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [tool, setTool] = useState<'select' | 'camera' | 'comment' | 'logo'>('select');
+  const [showLogoSelector, setShowLogoSelector] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
+  const [gridSize, setGridSize] = useState(50);
+  const [showAnimation, setShowAnimation] = useState(false);
   
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<any>(null);
-
-  // Load PDF document when file changes
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pdfLayerRef = useRef<any>(null);
+  
+  // Effet pour animer l'entrée des caméras
   useEffect(() => {
-    if (!pdfFile) return;
-
-    const loadPdf = async () => {
-      try {
-        setIsLoading(true);
-        console.log('Chargement du PDF...');
-        const fileArrayBuffer = await pdfFile.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: fileArrayBuffer }).promise;
-        setPdfDocument(pdf);
-        setTotalPages(pdf.numPages);
-        setPage(1);
-        console.log(`PDF chargé avec ${pdf.numPages} pages`);
-      } catch (error) {
-        console.error('Error loading PDF:', error);
-      } finally {
-        setIsLoading(false);
+    if (cameras.length > 0 && !showAnimation) {
+      setShowAnimation(true);
+    }
+  }, [cameras.length]);
+  
+  // Fonction pour gérer le redimensionnement de la fenêtre
+  const handleResize = useCallback(() => {
+    if (containerRef.current) {
+      const { width, height } = containerRef.current.getBoundingClientRect();
+      // Ajuster la taille du stage en fonction de la taille du conteneur
+      if (stageRef.current) {
+        stageRef.current.width(width);
+        stageRef.current.height(height);
+        stageRef.current.batchDraw();
       }
-    };
-
-    loadPdf();
-  }, [pdfFile, setTotalPages, setPage]);
-
-  // Render PDF page when page or scale changes
-  useEffect(() => {
-    if (!pdfDocument) return;
-
-    const renderPage = async () => {
-      try {
-        setIsLoading(true);
-        console.log(`Rendu de la page ${page} avec échelle ${scale}`);
-        const pdfPage = await pdfDocument.getPage(page);
-        const viewport = pdfPage.getViewport({ scale });
-        
-        if (!canvasRef.current) return;
-        
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-        
-        if (!context) return;
-        
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        
-        await pdfPage.render({
-          canvasContext: context,
-          viewport,
-        }).promise;
-        
-        setPdfPageRendered(canvas);
-        setStageSize({
-          width: viewport.width,
-          height: viewport.height
-        });
-        console.log(`Page ${page} rendue avec succès`);
-      } catch (error) {
-        console.error(`Erreur lors du rendu de la page ${page}:`, error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    renderPage();
-  }, [pdfDocument, page, scale]);
-
-  // Update container size on resize
-  useEffect(() => {
-    const updateSize = () => {
-      if (containerRef.current) {
-        const { width, height } = containerRef.current.getBoundingClientRect();
-        setStageSize(prev => ({
-          ...prev,
-          containerWidth: width,
-          containerHeight: height
-        }));
-      }
-    };
-
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    }
   }, []);
-
-  const handleZoomIn = () => {
-    setScale(prev => Math.min(prev + 0.1, 3));
+  
+  // Ajouter un écouteur de redimensionnement
+  useEffect(() => {
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [handleResize]);
+  
+  // Fonction pour gérer le chargement réussi du PDF
+  const handleDocumentLoadSuccess = (pdf: any) => {
+    setNumPages(pdf.numPages);
+    setLoading(false);
   };
-
-  const handleZoomOut = () => {
-    setScale(prev => Math.max(prev - 0.1, 0.5));
-  };
-
-  const handlePrevPage = () => {
-    if (page > 1) {
-      console.log(`Navigation vers la page ${page - 1}`);
-      setPage(page - 1);
-    }
-  };
-
-  const handleNextPage = () => {
-    if (page < totalPages) {
-      console.log(`Navigation vers la page ${page + 1}`);
-      setPage(page + 1);
-    }
-  };
-
-  const handleStageClick = (e: any) => {
-    // Récupérer la cible du clic
-    const clickTarget = e.target;
-    const stage = e.target.getStage();
-    const pointerPosition = stage.getPointerPosition();
+  
+  // Fonction pour gérer le chargement réussi d'une page
+  const handlePageLoadSuccess = (page: any) => {
+    const viewport = page.getViewport({ scale: 1 });
+    setPdfDimensions({
+      width: viewport.width,
+      height: viewport.height
+    });
     
-    // Si on est en mode ajout de commentaire
-    if (isAddingComment && pointerPosition) {
-      console.log(`Ajout d'un commentaire à la position (${pointerPosition.x}, ${pointerPosition.y})`);
-      setCommentPosition(pointerPosition);
-      setCommentFormOpen(true);
+    // Centrer le PDF dans la vue
+    if (containerRef.current) {
+      const { width, height } = containerRef.current.getBoundingClientRect();
+      const scaleX = width / viewport.width;
+      const scaleY = height / viewport.height;
+      const newScale = Math.min(scaleX, scaleY) * 0.9;
+      
+      setScale(newScale);
+      setPosition({
+        x: (width - viewport.width * newScale) / 2,
+        y: (height - viewport.height * newScale) / 2
+      });
+    }
+  };
+  
+  // Fonction pour gérer les erreurs de chargement du PDF
+  const handleDocumentLoadError = (error: Error) => {
+    console.error('Erreur lors du chargement du PDF:', error);
+    setLoading(false);
+  };
+  
+  // Fonction pour gérer le zoom
+  const handleZoom = (delta: number) => {
+    setScale(prevScale => {
+      const newScale = Math.max(0.1, Math.min(5, prevScale + delta));
+      
+      // Ajuster la position pour zoomer vers le centre
+      if (containerRef.current && pdfDimensions.width > 0) {
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        const centerX = width / 2;
+        const centerY = height / 2;
+        
+        const mousePointTo = {
+          x: (centerX - position.x) / prevScale,
+          y: (centerY - position.y) / prevScale
+        };
+        
+        const newPos = {
+          x: centerX - mousePointTo.x * newScale,
+          y: centerY - mousePointTo.y * newScale
+        };
+        
+        setPosition(newPos);
+      }
+      
+      return newScale;
+    });
+  };
+  
+  // Fonction pour gérer le déplacement du PDF
+  const handleDragStart = () => {
+    if (tool === 'select') {
+      setIsDragging(true);
+    }
+  };
+  
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
+  
+  const handleDragMove = (e: any) => {
+    if (isDragging && tool === 'select') {
+      setPosition({
+        x: e.target.x(),
+        y: e.target.y()
+      });
+    }
+  };
+  
+  // Fonction pour gérer les clics sur le stage
+  const handleStageClick = (e: any) => {
+    // Ignorer les clics sur les objets existants
+    if (e.target !== e.currentTarget && e.target !== pdfLayerRef.current) {
       return;
     }
     
-    // Si on clique directement sur le stage (pas sur une caméra ou un commentaire)
-    if (clickTarget === stage) {
-      if (pointerPosition) {
-        console.log(`Ajout d'une caméra à la position (${pointerPosition.x}, ${pointerPosition.y}) sur la page ${page}`);
-        addCamera(pointerPosition.x, pointerPosition.y, 'dome');
-      }
-      // Désélectionner le commentaire
-      if (selectedComment) {
-        setSelectedComment(null);
-      }
+    const stage = stageRef.current;
+    const pointerPosition = stage.getPointerPosition();
+    const x = (pointerPosition.x - position.x) / scale;
+    const y = (pointerPosition.y - position.y) / scale;
+    
+    if (tool === 'camera') {
+      // Ajouter une nouvelle caméra
+      const newCamera = {
+        id: crypto.randomUUID(),
+        name: `${namingPattern}${nextCameraNumber}`,
+        x,
+        y,
+        width: 30,
+        height: 30,
+        angle: 90,
+        viewDistance: 150,
+        opacity: 0.7,
+        type: selectedIconType
+      };
+      
+      addCamera(newCamera);
+      setNextCameraNumber(nextCameraNumber + 1);
+      setTool('select');
+    } else if (tool === 'comment') {
+      // Ajouter un nouveau commentaire
+      const newComment = {
+        id: crypto.randomUUID(),
+        text: 'Nouveau commentaire',
+        x,
+        y,
+        width: 200,
+        height: 50,
+        color: '#FFD700',
+        anchorX: x,
+        anchorY: y + 50
+      };
+      
+      addComment(newComment);
+      setTool('select');
+    } else if (tool === 'logo') {
+      // Ouvrir le sélecteur de logo
+      setShowLogoSelector(true);
     }
   };
-
-  const handleClearPage = () => {
-    if (window.confirm(`Êtes-vous sûr de vouloir supprimer toutes les caméras et commentaires de la page ${page} ?`)) {
-      console.log(`Suppression de toutes les caméras et commentaires de la page ${page}`);
-      clearCurrentPage();
+  
+  // Fonction pour ajouter un logo après sélection
+  const handleLogoSelect = (logoUrl: string) => {
+    if (!stageRef.current) return;
+    
+    const stage = stageRef.current;
+    const pointerPosition = stage.getPointerPosition();
+    const x = (pointerPosition.x - position.x) / scale;
+    const y = (pointerPosition.y - position.y) / scale;
+    
+    const newLogo = {
+      id: crypto.randomUUID(),
+      url: logoUrl,
+      x,
+      y,
+      width: 100,
+      height: 50
+    };
+    
+    addLogo(newLogo);
+    setShowLogoSelector(false);
+    setTool('select');
+  };
+  
+  // Fonction pour dessiner la grille
+  const renderGrid = () => {
+    if (!showGrid || !pdfDimensions.width || !pdfDimensions.height) return null;
+    
+    const gridLines = [];
+    const scaledGridSize = gridSize;
+    
+    // Lignes verticales
+    for (let x = 0; x <= pdfDimensions.width; x += scaledGridSize) {
+      gridLines.push(
+        <Line
+          key={`v-${x}`}
+          points={[x, 0, x, pdfDimensions.height]}
+          stroke="rgba(0, 0, 255, 0.2)"
+          strokeWidth={0.5}
+        />
+      );
     }
-  };
-
-  const handleAddComment = () => {
-    setIsAddingComment(true);
-  };
-
-  const handleDeleteComment = () => {
-    if (selectedComment && window.confirm('Êtes-vous sûr de vouloir supprimer ce commentaire ?')) {
-      deleteComment(selectedComment);
+    
+    // Lignes horizontales
+    for (let y = 0; y <= pdfDimensions.height; y += scaledGridSize) {
+      gridLines.push(
+        <Line
+          key={`h-${y}`}
+          points={[0, y, pdfDimensions.width, y]}
+          stroke="rgba(0, 0, 255, 0.2)"
+          strokeWidth={0.5}
+        />
+      );
     }
+    
+    return gridLines;
   };
-
-  const handleEditComment = () => {
-    if (selectedComment) {
-      setCommentFormOpen(true);
+  
+  // Effet d'animation pour les caméras
+  const [cameraOpacity, setCameraOpacity] = useState(0);
+  
+  useEffect(() => {
+    if (showAnimation) {
+      let opacity = 0;
+      const interval = setInterval(() => {
+        opacity += 0.05;
+        setCameraOpacity(opacity);
+        
+        if (opacity >= 1) {
+          clearInterval(interval);
+          setShowAnimation(false);
+        }
+      }, 30);
+      
+      return () => clearInterval(interval);
     }
-  };
-
+  }, [showAnimation]);
+  
+  // Rendu conditionnel pour le chargement ou l'absence de PDF
+  if (!pdfFile) {
+    return (
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100%',
+          bgcolor: '#f5f5f5'
+        }}
+      >
+        <Typography variant="h6" color="text.secondary" gutterBottom>
+          Aucun plan PDF chargé
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Utilisez le menu latéral pour charger un plan PDF
+        </Typography>
+      </Box>
+    );
+  }
+  
+  if (loading) {
+    return (
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100%' 
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+  
+  // Composant pour les lignes de la grille
+  const Line = ({ points, stroke, strokeWidth }: any) => (
+    <KonvaImage
+      image={(() => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+        
+        const [x1, y1, x2, y2] = points;
+        const width = Math.abs(x2 - x1) || 1;
+        const height = Math.abs(y2 - y1) || 1;
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        ctx.beginPath();
+        ctx.moveTo(x1 < x2 ? 0 : width, y1 < y2 ? 0 : height);
+        ctx.lineTo(x1 < x2 ? width : 0, y1 < y2 ? height : 0);
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = strokeWidth;
+        ctx.stroke();
+        
+        const img = new window.Image();
+        img.src = canvas.toDataURL();
+        return img;
+      })()}
+      x={Math.min(points[0], points[2])}
+      y={Math.min(points[1], points[3])}
+      width={Math.abs(points[2] - points[0]) || 1}
+      height={Math.abs(points[3] - points[1]) || 1}
+    />
+  );
+  
   return (
     <Box 
+      ref={containerRef} 
       sx={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        height: '100%',
-        position: 'relative'
+        position: 'relative', 
+        width: '100%', 
+        height: '100%', 
+        overflow: 'hidden',
+        bgcolor: '#f0f0f0',
+        '&:hover .controls': {
+          opacity: 1
+        }
       }}
     >
-      {!pdfFile ? (
-        <Paper 
-          sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            flexGrow: 1,
-            bgcolor: 'background.default',
-            p: 4
+      <Stage
+        ref={stageRef}
+        width={containerRef.current?.clientWidth || window.innerWidth}
+        height={containerRef.current?.clientHeight || window.innerHeight}
+        onClick={handleStageClick}
+        onTap={handleStageClick}
+      >
+        <Layer>
+          <Group
+            ref={pdfLayerRef}
+            x={position.x}
+            y={position.y}
+            scaleX={scale}
+            scaleY={scale}
+            draggable={tool === 'select'}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragMove={handleDragMove}
+          >
+            {/* Fond du PDF */}
+            <Rect
+              width={pdfDimensions.width}
+              height={pdfDimensions.height}
+              fill="#ffffff"
+              shadowColor="rgba(0, 0, 0, 0.3)"
+              shadowBlur={10}
+              shadowOffsetX={5}
+              shadowOffsetY={5}
+              cornerRadius={5}
+            />
+            
+            {/* Grille */}
+            {renderGrid()}
+            
+            {/* Contenu du PDF */}
+            {pdfFile && (
+              <PDFComponents
+                file={pdfFile}
+                pageNumber={currentPage}
+                onLoadSuccess={handleDocumentLoadSuccess}
+                onPageLoadSuccess={handlePageLoadSuccess}
+                onLoadError={handleDocumentLoadError}
+                width={pdfDimensions.width}
+              />
+            )}
+            
+            {/* Logos */}
+            {logos.map(logo => (
+              <LogoObject
+                key={logo.id}
+                logo={logo}
+                isSelected={selectedLogo === logo.id}
+              />
+            ))}
+            
+            {/* Caméras avec animation */}
+            <Group opacity={showAnimation ? cameraOpacity : 1}>
+              {cameras.map(camera => (
+                <CameraObject
+                  key={camera.id}
+                  camera={camera}
+                />
+              ))}
+            </Group>
+            
+            {/* Commentaires */}
+            {comments.map(comment => (
+              <CommentObject
+                key={comment.id}
+                comment={comment}
+                isSelected={selectedComment === comment.id}
+              />
+            ))}
+          </Group>
+        </Layer>
+      </Stage>
+      
+      {/* Contrôles flottants */}
+      <Paper 
+        elevation={3} 
+        className="controls"
+        sx={{ 
+          position: 'absolute', 
+          top: 16, 
+          right: 16, 
+          p: 1,
+          display: 'flex', 
+          flexDirection: 'column',
+          gap: 1,
+          opacity: showControls ? 1 : 0,
+          transition: 'opacity 0.3s ease',
+          zIndex: 1000
+        }}
+      >
+        <Tooltip title="Sélectionner" placement="left">
+          <IconButton 
+            color={tool === 'select' ? 'primary' : 'default'} 
+            onClick={() => setTool('select')}
+          >
+            <MousePointer size={20} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Ajouter une caméra" placement="left">
+          <IconButton 
+            color={tool === 'camera' ? 'primary' : 'default'} 
+            onClick={() => setTool('camera')}
+          >
+            <Camera size={20} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Ajouter un commentaire" placement="left">
+          <IconButton 
+            color={tool === 'comment' ? 'primary' : 'default'} 
+            onClick={() => setTool('comment')}
+          >
+            <StickyNote size={20} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Ajouter un logo" placement="left">
+          <IconButton 
+            color={tool === 'logo' ? 'primary' : 'default'} 
+            onClick={() => setTool('logo')}
+          >
+            <Image size={20} />
+          </IconButton>
+        </Tooltip>
+        
+        <Divider sx={{ my: 0.5 }} />
+        
+        <Tooltip title="Zoom avant" placement="left">
+          <IconButton onClick={() => handleZoom(0.1)}>
+            <ZoomIn size={20} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Zoom arrière" placement="left">
+          <IconButton onClick={() => handleZoom(-0.1)}>
+            <ZoomOut size={20} />
+          </IconButton>
+        </Tooltip>
+        
+        <Divider sx={{ my: 0.5 }} />
+        
+        <Tooltip title="Afficher/masquer la grille" placement="left">
+          <IconButton 
+            color={showGrid ? 'primary' : 'default'} 
+            onClick={() => setShowGrid(!showGrid)}
+          >
+            <ChevronsUpDown size={20} />
+          </IconButton>
+        </Tooltip>
+      </Paper>
+      
+      {/* Contrôle de la taille de la grille */}
+      {showGrid && (
+        <Paper
+          elevation={3}
+          sx={{
+            position: 'absolute',
+            bottom: 16,
+            right: 16,
+            p: 2,
+            width: 200,
+            zIndex: 1000
           }}
         >
-          <Box sx={{ textAlign: 'center' }}>
-            <img 
-              src="https://images.unsplash.com/photo-1586281380349-632531db7ed4?ixlib=rb-1.2.1&auto=format&fit=crop&w=300&q=80" 
-              alt="Blueprint" 
-              style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px', borderRadius: '8px' }}
-            />
-            <Typography variant="h5" gutterBottom>
-              Aucun plan chargé
-            </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Utilisez le bouton "Charger PDF" pour importer un plan
-            </Typography>
-          </Box>
-        </Paper>
-      ) : (
-        <>
-          <Box 
-            ref={containerRef}
-            sx={{ 
-              flexGrow: 1, 
-              overflow: 'auto',
-              position: 'relative',
-              bgcolor: '#e0e0e0'
-            }}
-          >
-            {isLoading && (
-              <Box 
-                sx={{ 
-                  position: 'absolute', 
-                  top: 0, 
-                  left: 0, 
-                  right: 0, 
-                  bottom: 0, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  bgcolor: 'rgba(255, 255, 255, 0.7)',
-                  zIndex: 10
-                }}
-              >
-                <Typography variant="h6">Chargement...</Typography>
-              </Box>
-            )}
-            <Box 
-              sx={{ 
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '100%',
-                p: 2
-              }}
-            >
-              <Box sx={{ position: 'relative' }}>
-                <canvas ref={canvasRef} style={{ display: 'block' }} />
-                {pdfPageRendered && (
-                  <Stage 
-                    ref={stageRef}
-                    width={stageSize.width} 
-                    height={stageSize.height}
-                    style={{ 
-                      position: 'absolute', 
-                      top: 0, 
-                      left: 0,
-                      pointerEvents: 'auto',
-                      cursor: isAddingComment ? 'crosshair' : 'default'
-                    }}
-                    onClick={handleStageClick}
-                    className="konvajs-content"
-                  >
-                    <Layer>
-                      {cameras.map(camera => (
-                        <CameraObject 
-                          key={camera.id} 
-                          camera={camera} 
-                        />
-                      ))}
-                      {comments.map(comment => (
-                        <CommentObject
-                          key={comment.id}
-                          comment={comment}
-                        />
-                      ))}
-                    </Layer>
-                  </Stage>
-                )}
-              </Box>
-            </Box>
-          </Box>
-          
-          <Paper 
-            sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              p: 1, 
-              borderTop: 1, 
-              borderColor: 'divider',
-              gap: 2
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <IconButton onClick={handleZoomOut} size="small">
-                <ZoomOut size={20} />
-              </IconButton>
-              <Slider
-                value={scale}
-                min={0.5}
-                max={3}
-                step={0.1}
-                onChange={(_, value) => setScale(value as number)}
-                sx={{ width: 100, mx: 1 }}
-              />
-              <IconButton onClick={handleZoomIn} size="small">
-                <ZoomIn size={20} />
-              </IconButton>
-              <Typography variant="body2" sx={{ ml: 1 }}>
-                {Math.round(scale * 100)}%
-              </Typography>
-            </Box>
-            
-            <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
-              <Button
-                startIcon={<MessageSquare size={16} />}
-                color="primary"
-                variant={isAddingComment ? "contained" : "outlined"}
-                size="small"
-                onClick={handleAddComment}
-                sx={{ mr: 1 }}
-              >
-                {isAddingComment ? "Placer commentaire" : "Ajouter commentaire"}
-              </Button>
-              
-              {selectedComment && (
-                <>
-                  <Button
-                    color="primary"
-                    variant="outlined"
-                    size="small"
-                    onClick={handleEditComment}
-                    sx={{ mr: 1 }}
-                  >
-                    Modifier
-                  </Button>
-                  <Button
-                    color="error"
-                    variant="outlined"
-                    size="small"
-                    onClick={handleDeleteComment}
-                    sx={{ mr: 1 }}
-                  >
-                    Supprimer
-                  </Button>
-                </>
-              )}
-            </Box>
-            
-            <Box sx={{ display: 'flex', alignItems: 'center', ml: 'auto' }}>
-              <Button
-                startIcon={<Trash2 size={16} />}
-                color="error"
-                variant="outlined"
-                size="small"
-                onClick={handleClearPage}
-                sx={{ mr: 2 }}
-                disabled={cameras.length === 0 && comments.length === 0}
-              >
-                Effacer la page
-              </Button>
-              
-              <IconButton 
-                onClick={handlePrevPage} 
-                disabled={page <= 1}
-                size="small"
-              >
-                <ChevronLeft size={20} />
-              </IconButton>
-              <Typography variant="body2" sx={{ mx: 1 }}>
-                Page {page} / {totalPages}
-              </Typography>
-              <IconButton 
-                onClick={handleNextPage} 
-                disabled={page >= totalPages}
-                size="small"
-              >
-                <ChevronRight size={20} />
-              </IconButton>
-            </Box>
-          </Paper>
-          
-          {/* Formulaire d'ajout/modification de commentaire */}
-          <CommentForm
-            open={commentFormOpen}
-            onClose={() => {
-              setCommentFormOpen(false);
-              setIsAddingComment(false);
-            }}
-            position={commentPosition}
+          <Typography variant="body2" gutterBottom>
+            Taille de la grille: {gridSize}
+          </Typography>
+          <Slider
+            value={gridSize}
+            onChange={(_, value) => setGridSize(value as number)}
+            min={10}
+            max={100}
+            step={5}
+            valueLabelDisplay="auto"
           />
-        </>
+        </Paper>
       )}
+      
+      {/* Sélecteur de logo */}
+      <LogoSelector
+        open={showLogoSelector}
+        onClose={() => setShowLogoSelector(false)}
+        onSelect={handleLogoSelect}
+      />
     </Box>
   );
 };

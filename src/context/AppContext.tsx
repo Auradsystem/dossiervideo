@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 import { Camera, CameraType, cameraIcons } from '../types/Camera';
 import { Comment } from '../types/Comment';
 import { User } from '../types/User';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAuth, initializeDefaultUsers, getServiceSupabase } from '../lib/supabase';
 
 // Interface pour stocker les caméras par page
 interface PageCameras {
@@ -141,18 +141,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const initApp = async () => {
       try {
         // Vérifier s'il y a une session active
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
         
-        if (session) {
-          const { user } = session;
+        if (data.session && data.session.user) {
+          const userData = {
+            id: data.session.user.id,
+            username: data.session.user.email || '',
+            email: data.session.user.email || '',
+            isAdmin: data.session.user.user_metadata?.is_admin || false,
+            createdAt: new Date(data.session.user.created_at || Date.now())
+          };
+          
           setIsAuthenticated(true);
-          setCurrentUser({
-            id: user.id,
-            email: user.email || '',
-            isAdmin: user.app_metadata?.is_admin || false
-          });
-          setIsAdmin(user.app_metadata?.is_admin || false);
-          console.log('Session restaurée:', user);
+          setCurrentUser(userData);
+          setIsAdmin(userData.isAdmin);
+          console.log('Session restaurée:', userData);
+        } else {
+          // Initialiser les utilisateurs par défaut si nécessaire
+          await initializeDefaultUsers();
         }
       } catch (error) {
         console.error('Erreur lors de l\'initialisation de l\'application:', error);
@@ -167,15 +173,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.log('Événement d\'authentification:', event);
         
         if (event === 'SIGNED_IN' && session) {
-          const { user } = session;
+          const userData = {
+            id: session.user.id,
+            username: session.user.email || '',
+            email: session.user.email || '',
+            isAdmin: session.user.user_metadata?.is_admin || false,
+            createdAt: new Date(session.user.created_at || Date.now()),
+            lastLogin: new Date()
+          };
+          
           setIsAuthenticated(true);
-          setCurrentUser({
-            id: user.id,
-            email: user.email || '',
-            isAdmin: user.app_metadata?.is_admin || false
-          });
-          setIsAdmin(user.app_metadata?.is_admin || false);
-          console.log('Utilisateur connecté:', user);
+          setCurrentUser(userData);
+          setIsAdmin(userData.isAdmin);
+          console.log('Utilisateur connecté:', userData);
         } else if (event === 'SIGNED_OUT') {
           setIsAuthenticated(false);
           setCurrentUser(null);
@@ -229,9 +239,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return false;
       }
       
-      if (data.user) {
-        // L'authentification est gérée par l'écouteur onAuthStateChange
-        console.log('Connexion réussie');
+      if (data.user && data.session) {
+        const userData = {
+          id: data.user.id,
+          username: data.user.email || '',
+          email: data.user.email || '',
+          isAdmin: data.user.user_metadata?.is_admin || false,
+          createdAt: new Date(data.user.created_at || Date.now()),
+          lastLogin: new Date()
+        };
+        
+        setIsAuthenticated(true);
+        setCurrentUser(userData);
+        setIsAdmin(userData.isAdmin);
+        console.log('Connexion réussie:', userData);
         return true;
       }
       
@@ -249,9 +270,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsSyncing(true);
       
       // Déconnexion de Supabase
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
       
-      // La déconnexion est gérée par l'écouteur onAuthStateChange
+      if (error) {
+        console.error('Erreur lors de la déconnexion:', error);
+        return;
+      }
+      
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setIsAdmin(false);
+      setIsAdminMode(false);
+      console.log('Déconnexion réussie');
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
     } finally {
@@ -269,9 +299,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         email,
         password,
         options: {
-          data: {
-            is_admin: isAdmin
-          }
+          data: { is_admin: isAdmin }
         }
       });
       
@@ -281,7 +309,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       
       if (data.user) {
-        console.log('Inscription réussie via l\'API standard');
+        console.log('Inscription réussie:', data.user);
         return true;
       }
       
