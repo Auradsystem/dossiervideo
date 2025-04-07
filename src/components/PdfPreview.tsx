@@ -1,23 +1,41 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Dialog, DialogContent, DialogActions, Button, IconButton, Slider, Typography, CircularProgress } from '@mui/material';
-import { X, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { Box, Dialog, DialogContent, DialogActions, Button, IconButton, Slider, Typography, CircularProgress, Switch, FormControlLabel, Tooltip } from '@mui/material';
+import { X, ZoomIn, ZoomOut, Maximize, Link, LinkOff, AlertCircle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 const PdfPreview: React.FC = () => {
-  const { previewUrl, isPreviewOpen, setIsPreviewOpen, scale } = useAppContext();
+  const { previewUrl, isPreviewOpen, setIsPreviewOpen, scale, setScale } = useAppContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [previewScale, setPreviewScale] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [pdfDimensions, setPdfDimensions] = useState({ width: 0, height: 0 });
+  const [isSyncEnabled, setIsSyncEnabled] = useState<boolean>(true);
+  const [scaleChanged, setScaleChanged] = useState<boolean>(false);
 
-  // Synchroniser l'échelle avec le document de travail à l'ouverture
+  // Synchroniser l'échelle du document de travail vers la prévisualisation à l'ouverture
   useEffect(() => {
     if (isPreviewOpen) {
       setPreviewScale(scale);
       setIsLoading(true);
+      setScaleChanged(false);
     }
   }, [scale, isPreviewOpen]);
+
+  // Synchroniser l'échelle de la prévisualisation vers le document de travail
+  useEffect(() => {
+    if (isPreviewOpen && isSyncEnabled && !isLoading && previewScale !== scale) {
+      setScale(previewScale);
+      setScaleChanged(true);
+      
+      // Réinitialiser l'indicateur de changement après 2 secondes
+      const timer = setTimeout(() => {
+        setScaleChanged(false);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [previewScale, isSyncEnabled, isPreviewOpen, isLoading]);
 
   // Gérer le chargement de l'iframe
   const handleIframeLoad = () => {
@@ -43,19 +61,8 @@ const PdfPreview: React.FC = () => {
               height: naturalHeight
             });
             
-            // Ajustement automatique pour la meilleure visualisation
-            if (containerRef.current) {
-              const container = containerRef.current;
-              const containerWidth = container.clientWidth - 40; // Soustraire le padding
-              const containerHeight = container.clientHeight - 40;
-              
-              // Calculer le ratio pour s'adapter correctement
-              const widthRatio = containerWidth / naturalWidth;
-              const heightRatio = containerHeight / naturalHeight;
-              const fitRatio = Math.min(widthRatio, heightRatio, 1); // Ne pas agrandir au-delà de 100%
-              
-              setPreviewScale(fitRatio);
-            }
+            // Nous ne faisons plus d'ajustement automatique initial
+            // pour garantir que la prévisualisation corresponde exactement au document de travail
           }
         }
       } catch (e) {
@@ -88,6 +95,10 @@ const PdfPreview: React.FC = () => {
 
   const handleClose = () => {
     setIsPreviewOpen(false);
+  };
+
+  const toggleSync = () => {
+    setIsSyncEnabled(!isSyncEnabled);
   };
 
   return (
@@ -127,12 +138,43 @@ const PdfPreview: React.FC = () => {
           <IconButton onClick={handleZoomIn} size="small">
             <ZoomIn size={20} />
           </IconButton>
-          <Typography variant="body2" sx={{ minWidth: '50px' }}>
-            {Math.round(previewScale * 100)}%
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', minWidth: '70px' }}>
+            <Typography variant="body2">
+              {Math.round(previewScale * 100)}%
+            </Typography>
+            {scaleChanged && (
+              <Tooltip title="Échelle appliquée au document de travail">
+                <AlertCircle size={16} color="green" style={{ marginLeft: 4 }} />
+              </Tooltip>
+            )}
+          </Box>
           <IconButton onClick={handleFitToScreen} size="small" title="Ajuster à l'écran">
             <Maximize size={18} />
           </IconButton>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={isSyncEnabled}
+                onChange={toggleSync}
+                size="small"
+              />
+            }
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', ml: -1 }}>
+                {isSyncEnabled ? (
+                  <Tooltip title="Synchronisation activée">
+                    <Link size={16} style={{ marginRight: 4 }} />
+                  </Tooltip>
+                ) : (
+                  <Tooltip title="Synchronisation désactivée">
+                    <LinkOff size={16} style={{ marginRight: 4 }} />
+                  </Tooltip>
+                )}
+                <Typography variant="body2">Sync</Typography>
+              </Box>
+            }
+            sx={{ ml: 1 }}
+          />
         </Box>
         <IconButton onClick={handleClose} size="small">
           <X size={20} />
@@ -200,7 +242,16 @@ const PdfPreview: React.FC = () => {
         )}
       </DialogContent>
       
-      <DialogActions sx={{ borderTop: '1px solid rgba(0, 0, 0, 0.12)' }}>
+      <DialogActions sx={{ 
+        borderTop: '1px solid rgba(0, 0, 0, 0.12)',
+        display: 'flex',
+        justifyContent: 'space-between'
+      }}>
+        <Typography variant="body2" color={isSyncEnabled ? 'primary' : 'text.secondary'} sx={{ ml: 2 }}>
+          {isSyncEnabled 
+            ? "Les modifications d'échelle sont synchronisées avec le document de travail" 
+            : "Mode de prévisualisation indépendant"}
+        </Typography>
         <Button onClick={handleClose} color="primary">
           Fermer
         </Button>
