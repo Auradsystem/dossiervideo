@@ -377,7 +377,6 @@ const LoginForm: React.FC = () => {
                       Remplir test
                     </Link>
                   )}
-                                  )}
                 </Box>
               </Box>
             </TabPanel>
