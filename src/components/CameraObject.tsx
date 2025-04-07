@@ -136,13 +136,13 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
         {/* Camera icon */}
         {getCameraIcon()}
         
-        {/* Camera label */}
+        {/* Camera label - positionné juste en dessous de la caméra */}
         <Text
           text={camera.name}
           fontSize={12}
           fill="#000"
-          offsetX={-camera.width / 2}
-          offsetY={-camera.height / 2 - 15}
+          offsetX={0}
+          offsetY={-camera.height / 2 + camera.width / 2 + 2}
           align="center"
           width={camera.width * 2}
         />
