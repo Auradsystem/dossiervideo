@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Group, Circle, Wedge, Text, Transformer, Path, Label, Tag } from 'react-konva';
+import React from 'react';
+import { Group, Circle, Wedge, Text, Transformer, Path } from 'react-konva';
 import { Camera, cameraIcons } from '../types/Camera';
 import { useAppContext } from '../context/AppContext';
 
@@ -15,56 +15,21 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
   } = useAppContext();
   
   const isSelected = selectedCamera === camera.id;
-  const transformerRef = useRef<any>(null);
-  const groupRef = useRef<any>(null);
-  const labelRef = useRef<any>(null);
+  const transformerRef = React.useRef<any>(null);
+  const groupRef = React.useRef<any>(null);
+  const wedgeRef = React.useRef<any>(null);
   
-  // État de transformation pour suivre les changements
-  const transformState = useRef({
-    initialWidth: camera.width,
-    initialHeight: camera.height,
-    initialViewDistance: camera.viewDistance,
-    initialRotation: camera.rotation || 0,
-    scaleX: 1,
-    scaleY: 1
-  });
-  
-  // Mettre à jour le transformer quand la caméra est sélectionnée
-  useEffect(() => {
+  React.useEffect(() => {
     if (isSelected && transformerRef.current && groupRef.current) {
       transformerRef.current.nodes([groupRef.current]);
       transformerRef.current.getLayer().batchDraw();
     }
   }, [isSelected]);
 
-  // Mettre à jour la position du label quand la caméra change
-  useEffect(() => {
-    updateLabelPosition();
-  }, [camera.x, camera.y, camera.width, camera.height, camera.rotation]);
-
-  // Fonction pour mettre à jour la position du label
-  const updateLabelPosition = () => {
-    if (!labelRef.current) return;
-    
-    labelRef.current.position({
-      x: camera.x,
-      y: camera.y - camera.height/2 - 20
-    });
-    
-    const textNode = labelRef.current.findOne('Text');
-    if (textNode) {
-      textNode.fontSize(Math.max(10, Math.min(16, camera.width * 0.4)));
-      textNode.width(camera.width * 2);
-      textNode.offsetX(camera.width);
-    }
-    
-    labelRef.current.getLayer()?.batchDraw();
-  };
-
-  // Générer l'icône de caméra en fonction du type
   const getCameraIcon = () => {
-    const scale = camera.width / 24;
+    const scale = camera.width / 24; // Scale factor based on camera width
     
+    // Utiliser l'icône personnalisée si disponible
     if (camera.iconPath) {
       return (
         <Path
@@ -78,6 +43,7 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
       );
     }
     
+    // Sinon, utiliser l'icône prédéfinie pour le type de caméra
     const iconData = cameraIcons[camera.type] || cameraIcons.dome;
     
     return (
@@ -101,176 +67,94 @@ const CameraObject: React.FC<CameraObjectProps> = ({ camera }) => {
     );
   };
 
-  // Gestionnaires d'événements pour le déplacement
-  const handleDragMove = (e: any) => {
-    if (labelRef.current) {
-      labelRef.current.position({
-        x: e.target.x(),
-        y: e.target.y() - camera.height/2 - 20
-      });
-      labelRef.current.getLayer()?.batchDraw();
-    }
-  };
-
   const handleDragEnd = (e: any) => {
+    console.log(`Caméra déplacée: ${camera.id} à la position (${e.target.x()}, ${e.target.y()})`);
     updateCamera(camera.id, {
       x: e.target.x(),
       y: e.target.y()
     });
   };
 
-  // Gestionnaires d'événements pour la transformation
-  const handleTransformStart = () => {
-    if (groupRef.current) {
-      transformState.current = {
-        initialWidth: camera.width,
-        initialHeight: camera.height,
-        initialViewDistance: camera.viewDistance,
-        initialRotation: camera.rotation || 0,
-        scaleX: 1,
-        scaleY: 1
-      };
-    }
-  };
-
-  const handleTransform = (e: any) => {
-    const node = e.target;
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-    const rotation = node.rotation();
-    
-    transformState.current.scaleX = scaleX;
-    transformState.current.scaleY = scaleY;
-    
-    // Mettre à jour le label pendant la transformation
-    if (labelRef.current) {
-      const newWidth = camera.width * scaleX;
-      
-      labelRef.current.position({
-        x: node.x(),
-        y: node.y() - (camera.height * scaleY)/2 - 20
-      });
-      
-      const textNode = labelRef.current.findOne('Text');
-      if (textNode) {
-        textNode.fontSize(Math.max(10, Math.min(16, newWidth * 0.4)));
-        textNode.width(newWidth * 2);
-        textNode.offsetX(newWidth);
-      }
-      
-      labelRef.current.getLayer()?.batchDraw();
-    }
-  };
-
-  const handleTransformEnd = () => {
+  const handleTransformEnd = (e: any) => {
     const node = groupRef.current;
-    if (!node) return;
-    
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
-    const rotation = node.rotation();
     
-    // Calculer les nouvelles dimensions
-    const newWidth = Math.max(10, camera.width * scaleX);
-    const newHeight = Math.max(10, camera.height * scaleY);
-    const newViewDistance = camera.viewDistance * scaleX;
-    
-    // Réinitialiser l'échelle
+    // Reset scale and apply it to width and height
     node.scaleX(1);
     node.scaleY(1);
     
-    // Mettre à jour la caméra
+    console.log(`Caméra redimensionnée: ${camera.id}, nouvelle taille: ${Math.max(5, camera.width * scaleX)} x ${Math.max(5, camera.height * scaleY)}`);
     updateCamera(camera.id, {
       x: node.x(),
       y: node.y(),
-      width: newWidth,
-      height: newHeight,
-      viewDistance: newViewDistance,
+      width: Math.max(5, camera.width * scaleX),
+      height: Math.max(5, camera.height * scaleY)
+    });
+  };
+
+  // Fonction pour gérer la rotation du champ de vision
+  const handleRotate = (e: any) => {
+    if (!wedgeRef.current) return;
+    
+    const rotation = wedgeRef.current.rotation();
+    console.log(`Caméra tournée: ${camera.id}, nouvelle rotation: ${rotation}°`);
+    updateCamera(camera.id, {
       rotation: rotation
     });
   };
 
-  // Taille de police proportionnelle
-  const fontSize = Math.max(10, Math.min(16, camera.width * 0.4));
-
   return (
     <>
-      {/* Groupe principal pour la caméra et son champ de vision */}
       <Group
         ref={groupRef}
         x={camera.x}
         y={camera.y}
         draggable
-        rotation={camera.rotation || 0}
-        onClick={() => setSelectedCamera(camera.id)}
+        onClick={() => {
+          console.log(`Caméra sélectionnée: ${camera.id}`);
+          setSelectedCamera(camera.id);
+        }}
         onTap={() => setSelectedCamera(camera.id)}
-        onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
-        onTransformStart={handleTransformStart}
-        onTransform={handleTransform}
         onTransformEnd={handleTransformEnd}
       >
-        {/* Champ de vision */}
+        {/* Camera view angle - avec rotation correcte */}
         <Wedge
-          x={0}
-          y={0}
+          ref={wedgeRef}
           radius={camera.viewDistance}
           angle={camera.angle}
           fill="rgba(255, 0, 0, 0.3)"
           stroke="rgba(255, 0, 0, 0.6)"
           strokeWidth={1}
-          rotation={-camera.angle / 2}
+          rotation={camera.rotation || -camera.angle / 2}
           opacity={camera.opacity}
+          draggable={isSelected}
+          onDragEnd={handleRotate}
         />
         
-        {/* Icône de caméra */}
+        {/* Camera icon */}
         {getCameraIcon()}
-      </Group>
-      
-      {/* Label séparé pour le texte - toujours horizontal */}
-      <Label
-        ref={labelRef}
-        x={camera.x}
-        y={camera.y - camera.height/2 - 20}
-        onClick={() => setSelectedCamera(camera.id)}
-        onTap={() => setSelectedCamera(camera.id)}
-      >
-        <Tag
-          fill="transparent"
-          pointerDirection="down"
-          pointerWidth={10}
-          pointerHeight={10}
-          lineJoin="round"
-        />
+        
+        {/* Camera label */}
         <Text
           text={camera.name}
-          fontSize={fontSize}
+          fontSize={12}
           fill="#000"
-          padding={2}
+          offsetX={-camera.width / 2}
+          offsetY={-camera.height / 2 - 15}
           align="center"
           width={camera.width * 2}
-          offsetX={camera.width}
         />
-      </Label>
+      </Group>
       
-      {/* Transformer pour redimensionner et faire pivoter la caméra */}
       {isSelected && (
         <Transformer
           ref={transformerRef}
-          keepRatio={true}
-          rotateEnabled={true}
-          enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
           boundBoxFunc={(oldBox, newBox) => {
-            // Limiter la taille min/max
+            // Limit minimum size
             if (newBox.width < 10 || newBox.height < 10) {
               return oldBox;
-            }
-            if (newBox.width > 100 || newBox.height > 100) {
-              return {
-                ...newBox,
-                width: Math.min(newBox.width, 100),
-                height: Math.min(newBox.height, 100)
-              };
             }
             return newBox;
           }}

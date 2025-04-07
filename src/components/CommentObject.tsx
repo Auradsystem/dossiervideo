@@ -1,35 +1,26 @@
-import React, { useRef, useEffect } from 'react';
-import { Group, Text, Rect, Circle, Line, Transformer } from 'react-konva';
-import { useAppContext } from '../context/AppContext';
+import React from 'react';
+import { Group, Text, Rect, Circle, Transformer } from 'react-konva';
 import { Comment } from '../types/Comment';
+import { useAppContext } from '../context/AppContext';
 
 interface CommentObjectProps {
   comment: Comment;
-  isSelected: boolean;
 }
 
-const CommentObject: React.FC<CommentObjectProps> = ({ comment, isSelected }) => {
-  const { updateComment, setSelectedComment, selectedCamera, setSelectedCamera, selectedLogo, setSelectedLogo } = useAppContext();
+const CommentObject: React.FC<CommentObjectProps> = ({ comment }) => {
+  const { 
+    selectedComment, 
+    setSelectedComment, 
+    updateComment,
+    selectedCamera,
+    setSelectedCamera
+  } = useAppContext();
   
-  const groupRef = useRef<any>(null);
-  const transformerRef = useRef<any>(null);
-  const textRef = useRef<any>(null);
+  const isSelected = selectedComment === comment.id;
+  const transformerRef = React.useRef<any>(null);
+  const groupRef = React.useRef<any>(null);
   
-  // Calculer la largeur du texte pour dimensionner le rectangle
-  const [textWidth, setTextWidth] = React.useState(200);
-  const [textHeight, setTextHeight] = React.useState(30);
-  
-  useEffect(() => {
-    if (textRef.current) {
-      const textNode = textRef.current;
-      const newWidth = Math.max(200, textNode.width() + 40);
-      const newHeight = Math.max(30, textNode.height() + 20);
-      setTextWidth(newWidth);
-      setTextHeight(newHeight);
-    }
-  }, [comment.text]);
-  
-  useEffect(() => {
+  React.useEffect(() => {
     if (isSelected && transformerRef.current && groupRef.current) {
       transformerRef.current.nodes([groupRef.current]);
       transformerRef.current.getLayer().batchDraw();
@@ -37,68 +28,18 @@ const CommentObject: React.FC<CommentObjectProps> = ({ comment, isSelected }) =>
   }, [isSelected]);
 
   const handleDragEnd = (e: any) => {
+    console.log(`Commentaire déplacé: ${comment.id} à la position (${e.target.x()}, ${e.target.y()})`);
     updateComment(comment.id, {
       x: e.target.x(),
       y: e.target.y()
     });
   };
 
-  const handleTransformEnd = (e: any) => {
-    const node = groupRef.current;
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-    
-    // Réinitialiser l'échelle et mettre à jour les dimensions
-    node.scaleX(1);
-    node.scaleY(1);
-    
-    updateComment(comment.id, {
-      x: node.x(),
-      y: node.y(),
-      width: Math.max(100, textWidth * scaleX),
-      height: Math.max(30, textHeight * scaleY),
-      rotation: node.rotation()
-    });
-  };
+  // Calculer la largeur du texte pour dimensionner correctement le rectangle
+  const textWidth = comment.text.length * 7; // Approximation
+  const width = Math.max(100, textWidth + 20);
+  const height = 40;
 
-  // Effet de pulsation pour les commentaires non sélectionnés
-  const [scale, setScale] = React.useState(1);
-  const [increasing, setIncreasing] = React.useState(true);
-  
-  useEffect(() => {
-    if (!isSelected) {
-      const interval = setInterval(() => {
-        setScale(prevScale => {
-          if (prevScale >= 1.05) {
-            setIncreasing(false);
-            return prevScale - 0.005;
-          } else if (prevScale <= 0.95) {
-            setIncreasing(true);
-            return prevScale + 0.005;
-          } else {
-            return increasing ? prevScale + 0.005 : prevScale - 0.005;
-          }
-        });
-      }, 50);
-      
-      return () => clearInterval(interval);
-    } else {
-      setScale(1);
-    }
-  }, [isSelected, increasing]);
-
-  // Couleurs et styles
-  const bgColor = comment.color || '#FFD700';
-  const textColor = '#000000';
-  const shadowColor = 'rgba(0, 0, 0, 0.3)';
-  const shadowBlur = 5;
-  const shadowOffset = { x: 2, y: 2 };
-  const cornerRadius = 8;
-  
-  // Calculer la position de la ligne et du point d'ancrage
-  const anchorX = comment.anchorX || comment.x;
-  const anchorY = comment.anchorY || comment.y + textHeight;
-  
   return (
     <>
       <Group
@@ -106,74 +47,64 @@ const CommentObject: React.FC<CommentObjectProps> = ({ comment, isSelected }) =>
         x={comment.x}
         y={comment.y}
         draggable
-        rotation={comment.rotation || 0}
         onClick={() => {
+          console.log(`Commentaire sélectionné: ${comment.id}`);
           setSelectedComment(comment.id);
-          // Désélectionner les autres éléments
-          if (selectedCamera) setSelectedCamera(null);
-          if (selectedLogo) setSelectedLogo(null);
+          // Désélectionner la caméra si un commentaire est sélectionné
+          if (selectedCamera) {
+            setSelectedCamera(null);
+          }
         }}
         onTap={() => setSelectedComment(comment.id)}
         onDragEnd={handleDragEnd}
-        onTransformEnd={handleTransformEnd}
-        scaleX={isSelected ? 1 : scale}
-        scaleY={isSelected ? 1 : scale}
       >
-        {/* Ligne reliant le commentaire à son point d'ancrage */}
-        <Line
-          points={[textWidth / 2, textHeight, anchorX - comment.x, anchorY - comment.y]}
-          stroke="#555"
-          strokeWidth={1.5}
-          dash={[5, 2]}
-        />
-        
-        {/* Point d'ancrage */}
+        {/* Indicateur de commentaire */}
         <Circle
-          x={anchorX - comment.x}
-          y={anchorY - comment.y}
-          radius={5}
-          fill={bgColor}
-          stroke="#555"
+          radius={10}
+          fill={comment.color}
+          stroke="#000"
           strokeWidth={1}
-        />
-        
-        {/* Fond du commentaire avec ombre */}
-        <Rect
-          width={textWidth}
-          height={textHeight}
-          fill={bgColor}
-          cornerRadius={cornerRadius}
-          shadowColor={shadowColor}
-          shadowBlur={shadowBlur}
-          shadowOffsetX={shadowOffset.x}
-          shadowOffsetY={shadowOffset.y}
           opacity={0.9}
         />
         
-        {/* Texte du commentaire */}
-        <Text
-          ref={textRef}
-          text={comment.text}
-          fontSize={14}
-          fontFamily="Arial"
-          fill={textColor}
-          width={textWidth - 20}
-          height={textHeight - 10}
-          align="center"
-          verticalAlign="middle"
-          padding={10}
-        />
+        {/* Bulle de commentaire */}
+        {isSelected && (
+          <>
+            <Rect
+              x={15}
+              y={-height / 2}
+              width={width}
+              height={height}
+              fill="#fff"
+              stroke={comment.color}
+              strokeWidth={2}
+              cornerRadius={5}
+              shadowColor="rgba(0,0,0,0.3)"
+              shadowBlur={5}
+              shadowOffsetX={2}
+              shadowOffsetY={2}
+            />
+            <Text
+              x={25}
+              y={-height / 2 + 10}
+              text={comment.text}
+              fontSize={14}
+              fill="#000"
+              width={width - 20}
+              height={height - 20}
+              wrap="word"
+            />
+          </>
+        )}
       </Group>
       
       {isSelected && (
         <Transformer
           ref={transformerRef}
+          enabledAnchors={[]}
           boundBoxFunc={(oldBox, newBox) => {
-            // Limiter la taille minimale
-            if (newBox.width < 100 || newBox.height < 30) {
-              return oldBox;
-            }
-            return newBox;
+            // Empêcher le redimensionnement
+            return oldBox;
           }}
         />
       )}

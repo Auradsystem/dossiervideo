@@ -13,7 +13,7 @@ import {
   Tab
 } from '@mui/material';
 import { useAppContext } from '../context/AppContext';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAuth } from '../lib/supabase';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -106,19 +106,13 @@ const LoginForm: React.FC = () => {
     setIsLoading(true);
     
     try {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { is_admin: false }
-        }
-      });
+      const { user, error: signUpError } = await supabaseAuth.signUp(email, password);
       
       if (signUpError) {
         throw signUpError;
       }
       
-      if (data.user) {
+      if (user) {
         setSuccess('Inscription réussie ! Vous pouvez maintenant vous connecter.');
         setEmail('');
         setPassword('');
@@ -129,7 +123,7 @@ const LoginForm: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Erreur lors de l\'inscription:', error);
-      if (error.message && error.message.includes('already registered')) {
+      if (error.message.includes('already registered')) {
         setError('Cet email est déjà utilisé');
       } else {
         setError(error.message || 'Une erreur est survenue lors de l\'inscription');
@@ -151,6 +145,7 @@ const LoginForm: React.FC = () => {
     setIsLoading(true);
     
     try {
+      // Appeler la fonction de réinitialisation du mot de passe de Supabase
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
@@ -193,7 +188,14 @@ const LoginForm: React.FC = () => {
             Gestion de caméras sur plans
           </Typography>
           
-          {/* Suppression de l'indicateur de chargement ici pour éviter le double affichage */}
+          {isSyncing && (
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+              <CircularProgress size={16} sx={{ mr: 1 }} />
+              <Typography variant="caption" color="text.secondary">
+                Connexion en cours...
+              </Typography>
+            </Box>
+          )}
         </Box>
         
         {error && (
@@ -229,7 +231,7 @@ const LoginForm: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoFocus
-              disabled={isLoading || isSyncing}
+              disabled={isLoading}
             />
             
             <Button 
@@ -238,9 +240,9 @@ const LoginForm: React.FC = () => {
               fullWidth 
               size="large"
               sx={{ mt: 3 }}
-              disabled={isLoading || isSyncing}
+              disabled={isLoading}
             >
-              {(isLoading || isSyncing) ? <CircularProgress size={24} /> : 'Envoyer le lien de réinitialisation'}
+              {isLoading ? <CircularProgress size={24} /> : 'Envoyer le lien de réinitialisation'}
             </Button>
             
             <Box sx={{ mt: 2, textAlign: 'center' }}>
@@ -249,7 +251,6 @@ const LoginForm: React.FC = () => {
                 variant="body2" 
                 onClick={() => setIsResetMode(false)}
                 underline="hover"
-                disabled={isLoading || isSyncing}
               >
                 Retour à la connexion
               </Link>
@@ -275,7 +276,7 @@ const LoginForm: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoFocus
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading}
                 />
                 
                 <TextField
@@ -286,7 +287,7 @@ const LoginForm: React.FC = () => {
                   margin="normal"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading}
                 />
                 
                 <Button 
@@ -295,9 +296,9 @@ const LoginForm: React.FC = () => {
                   fullWidth 
                   size="large"
                   sx={{ mt: 3 }}
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading}
                 >
-                  {(isLoading || isSyncing) ? <CircularProgress size={24} /> : 'Se connecter'}
+                  {isLoading ? <CircularProgress size={24} /> : 'Se connecter'}
                 </Button>
                 
                 <Box sx={{ mt: 2, textAlign: 'center' }}>
@@ -306,7 +307,6 @@ const LoginForm: React.FC = () => {
                     variant="body2" 
                     onClick={() => setIsResetMode(true)}
                     underline="hover"
-                    disabled={isLoading || isSyncing}
                   >
                     Mot de passe oublié ?
                   </Link>
@@ -325,7 +325,7 @@ const LoginForm: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoFocus
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading}
                 />
                 
                 <TextField
@@ -336,7 +336,7 @@ const LoginForm: React.FC = () => {
                   margin="normal"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading}
                 />
                 
                 <TextField
@@ -347,7 +347,7 @@ const LoginForm: React.FC = () => {
                   margin="normal"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading}
                 />
                 
                 <Button 
@@ -356,9 +356,9 @@ const LoginForm: React.FC = () => {
                   fullWidth 
                   size="large"
                   sx={{ mt: 3 }}
-                  disabled={isLoading || isSyncing}
+                  disabled={isLoading}
                 >
-                  {(isLoading || isSyncing) ? <CircularProgress size={24} /> : 'S\'inscrire'}
+                  {isLoading ? <CircularProgress size={24} /> : 'S\'inscrire'}
                 </Button>
               </Box>
             </TabPanel>

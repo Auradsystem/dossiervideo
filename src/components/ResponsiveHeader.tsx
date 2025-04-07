@@ -3,314 +3,356 @@ import {
   AppBar, 
   Toolbar, 
   Typography, 
-  IconButton, 
   Button, 
-  Box, 
+  IconButton, 
   Menu, 
   MenuItem, 
-  Avatar, 
-  Tooltip, 
-  Badge,
+  Divider,
+  Box,
+  Tooltip,
+  Avatar,
+  ListItemIcon,
+  Drawer,
+  List,
+  ListItem,
+  ListItemText,
   useMediaQuery,
   useTheme,
-  Slide,
-  Fade
+  Badge
 } from '@mui/material';
-import { 
-  Menu as MenuIcon, 
-  ChevronLeft, 
-  LogOut, 
-  User, 
-  Settings, 
-  HelpCircle,
-  Bell,
-  FileText,
-  Layers,
-  PanelLeft
-} from 'lucide-react';
+import {
+  Menu as MenuIcon,
+  Logout as LogoutIcon,
+  AdminPanelSettings as AdminIcon,
+  AccountCircle as AccountIcon,
+  Settings as SettingsIcon,
+  AutoAwesome as MagicIcon,
+  CameraAlt as CameraIcon,
+  PictureAsPdf as PdfIcon,
+  Comment as CommentIcon,
+  Close as CloseIcon
+} from '@mui/icons-material';
 import { useAppContext } from '../context/AppContext';
 
 interface ResponsiveHeaderProps {
-  toggleSidebar: () => void;
-  sidebarOpen: boolean;
+  toggleSidebar?: () => void;
+  openAITools: () => void;
 }
 
-const ResponsiveHeader: React.FC<ResponsiveHeaderProps> = ({ toggleSidebar, sidebarOpen }) => {
+const ResponsiveHeader: React.FC<ResponsiveHeaderProps> = ({ toggleSidebar, openAITools }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const isSmall = useMediaQuery(theme.breakpoints.down('sm'));
   
   const { 
-    currentUser, 
     logout, 
     isAdmin, 
+    currentUser, 
     isAdminMode, 
     setIsAdminMode,
-    pdfFile,
-    numPages,
-    currentPage,
-    setCurrentPage
+    cameras,
+    comments
   } = useAppContext();
   
-  const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
-  const [notificationsAnchor, setNotificationsAnchor] = useState<null | HTMLElement>(null);
-  const [pagesMenuAnchor, setPagesMenuAnchor] = useState<null | HTMLElement>(null);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const open = Boolean(anchorEl);
   
-  const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setUserMenuAnchor(event.currentTarget);
+  const handleClick = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
   };
   
-  const handleUserMenuClose = () => {
-    setUserMenuAnchor(null);
-  };
-  
-  const handleNotificationsOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setNotificationsAnchor(event.currentTarget);
-  };
-  
-  const handleNotificationsClose = () => {
-    setNotificationsAnchor(null);
-  };
-  
-  const handlePagesMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setPagesMenuAnchor(event.currentTarget);
-  };
-  
-  const handlePagesMenuClose = () => {
-    setPagesMenuAnchor(null);
+  const handleClose = () => {
+    setAnchorEl(null);
   };
   
   const handleLogout = () => {
-    handleUserMenuClose();
+    handleClose();
     logout();
   };
   
-  const handleAdminModeToggle = () => {
-    handleUserMenuClose();
+  const handleAdminMode = () => {
+    handleClose();
     setIsAdminMode(!isAdminMode);
-  };
-  
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-    handlePagesMenuClose();
-  };
-  
-  // Générer les éléments du menu des pages
-  const pageMenuItems = [];
-  if (numPages > 0) {
-    for (let i = 1; i <= numPages; i++) {
-      pageMenuItems.push(
-        <MenuItem 
-          key={i} 
-          onClick={() => handlePageChange(i)}
-          selected={currentPage === i}
-        >
-          Page {i}
-        </MenuItem>
-      );
+    if (isMobile) {
+      setMobileMenuOpen(false);
     }
-  }
+  };
   
+  const handleOpenAITools = () => {
+    openAITools();
+    if (isMobile) {
+      setMobileMenuOpen(false);
+    }
+  };
+  
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
   return (
-    <AppBar 
-      position="static" 
-      color="primary"
-      elevation={3}
-      sx={{
-        zIndex: theme.zIndex.drawer + 1,
-        transition: 'all 0.3s ease',
-        background: 'linear-gradient(90deg, #1976d2 0%, #2196f3 100%)'
-      }}
-    >
-      <Toolbar>
-        <IconButton
-          color="inherit"
-          aria-label="toggle sidebar"
-          edge="start"
-          onClick={toggleSidebar}
-          sx={{ mr: 2 }}
-        >
-          {sidebarOpen ? <ChevronLeft /> : <MenuIcon />}
-        </IconButton>
-        
-        <Slide direction="right" in={true} mountOnEnter unmountOnExit>
-          <Typography 
-            variant={isSmall ? "body1" : "h6"} 
-            component="div" 
-            sx={{ 
-              flexGrow: 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1
-            }}
-          >
-            <PanelLeft size={24} />
-            {!isSmall && "PlanCam"}
-          </Typography>
-        </Slide>
-        
-        {/* Menu des pages PDF */}
-        {pdfFile && numPages > 0 && (
-          <Fade in={true}>
-            <Box sx={{ mx: 1 }}>
-              <Button
+    <>
+      <AppBar position="static">
+        <Toolbar>
+          {isMobile ? (
+            // Mobile header
+            <>
+              <IconButton
+                size="large"
+                edge="start"
                 color="inherit"
-                onClick={handlePagesMenuOpen}
-                startIcon={<Layers size={18} />}
-                endIcon={<ChevronLeft style={{ transform: 'rotate(-90deg)' }} size={16} />}
-                sx={{ 
-                  bgcolor: 'rgba(255, 255, 255, 0.1)',
-                  '&:hover': {
-                    bgcolor: 'rgba(255, 255, 255, 0.2)'
-                  },
-                  borderRadius: 2,
-                  px: 2
-                }}
+                aria-label="menu"
+                onClick={toggleMobileMenu}
+                sx={{ mr: 2 }}
               >
-                Page {currentPage} / {numPages}
-              </Button>
-              <Menu
-                anchorEl={pagesMenuAnchor}
-                open={Boolean(pagesMenuAnchor)}
-                onClose={handlePagesMenuClose}
-                PaperProps={{
-                  sx: {
-                    maxHeight: 300,
-                    overflow: 'auto'
-                  }
-                }}
-              >
-                {pageMenuItems}
-              </Menu>
-            </Box>
-          </Fade>
+                <MenuIcon />
+              </IconButton>
+              
+              <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                PlanCam
+              </Typography>
+              
+              <Tooltip title="Assistant IA">
+                <IconButton color="inherit" onClick={handleOpenAITools}>
+                  <MagicIcon />
+                </IconButton>
+              </Tooltip>
+              
+              <Tooltip title="Paramètres du compte">
+                <IconButton
+                  onClick={handleClick}
+                  size="small"
+                  sx={{ ml: 1 }}
+                  aria-controls={open ? 'account-menu' : undefined}
+                  aria-haspopup="true"
+                  aria-expanded={open ? 'true' : undefined}
+                >
+                  <Avatar sx={{ width: 32, height: 32, bgcolor: isAdmin ? 'secondary.main' : 'primary.main' }}>
+                    {currentUser?.username.charAt(0).toUpperCase() || 'U'}
+                  </Avatar>
+                </IconButton>
+              </Tooltip>
+            </>
+          ) : (
+            // Desktop header
+            <>
+              {toggleSidebar && (
+                <IconButton
+                  size="large"
+                  edge="start"
+                  color="inherit"
+                  aria-label="menu"
+                  sx={{ mr: 2 }}
+                  onClick={toggleSidebar}
+                >
+                  <MenuIcon />
+                </IconButton>
+              )}
+              
+              <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                PlanCam
+              </Typography>
+              
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Button 
+                  color="inherit" 
+                  startIcon={<MagicIcon />}
+                  onClick={handleOpenAITools}
+                  sx={{ mr: 2 }}
+                >
+                  Assistant IA
+                </Button>
+                
+                {isAdminMode && isAdmin && (
+                  <Button 
+                    color="inherit" 
+                    onClick={() => setIsAdminMode(false)}
+                    sx={{ mr: 2 }}
+                  >
+                    Quitter le mode admin
+                  </Button>
+                )}
+                
+                <Tooltip title="Paramètres du compte">
+                  <IconButton
+                    onClick={handleClick}
+                    size="small"
+                    sx={{ ml: 2 }}
+                    aria-controls={open ? 'account-menu' : undefined}
+                    aria-haspopup="true"
+                    aria-expanded={open ? 'true' : undefined}
+                  >
+                    <Avatar sx={{ width: 32, height: 32, bgcolor: isAdmin ? 'secondary.main' : 'primary.main' }}>
+                      {currentUser?.username.charAt(0).toUpperCase() || 'U'}
+                    </Avatar>
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            </>
+          )}
+        </Toolbar>
+      </AppBar>
+      
+      {/* Menu utilisateur */}
+      <Menu
+        anchorEl={anchorEl}
+        id="account-menu"
+        open={open}
+        onClose={handleClose}
+        onClick={handleClose}
+        PaperProps={{
+          elevation: 0,
+          sx: {
+            overflow: 'visible',
+            filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
+            mt: 1.5,
+            '& .MuiAvatar-root': {
+              width: 32,
+              height: 32,
+              ml: -0.5,
+              mr: 1,
+            },
+            '&:before': {
+              content: '""',
+              display: 'block',
+              position: 'absolute',
+              top: 0,
+              right: 14,
+              width: 10,
+              height: 10,
+              bgcolor: 'background.paper',
+              transform: 'translateY(-50%) rotate(45deg)',
+              zIndex: 0,
+            },
+          },
+        }}
+        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+      >
+        <MenuItem onClick={handleClose}>
+          <ListItemIcon>
+            <AccountIcon fontSize="small" />
+          </ListItemIcon>
+          {currentUser?.username || 'Utilisateur'}
+          {isAdmin && ' (Admin)'}
+        </MenuItem>
+        
+        <Divider />
+        
+        {isAdmin && !isAdminMode && (
+          <MenuItem onClick={handleAdminMode}>
+            <ListItemIcon>
+              <AdminIcon fontSize="small" />
+            </ListItemIcon>
+            Mode administrateur
+          </MenuItem>
         )}
         
-        {/* Bouton de notification */}
-        <Tooltip title="Notifications">
-          <IconButton color="inherit" onClick={handleNotificationsOpen}>
-            <Badge badgeContent={3} color="error">
-              <Bell size={20} />
-            </Badge>
-          </IconButton>
-        </Tooltip>
-        <Menu
-          anchorEl={notificationsAnchor}
-          open={Boolean(notificationsAnchor)}
-          onClose={handleNotificationsClose}
-          PaperProps={{
-            sx: {
-              width: 320,
-              maxWidth: '100%'
-            }
-          }}
-        >
-          <Box sx={{ p: 2, borderBottom: '1px solid #eee' }}>
-            <Typography variant="subtitle1" fontWeight="bold">
-              Notifications
-            </Typography>
-          </Box>
-          <MenuItem onClick={handleNotificationsClose}>
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', py: 1 }}>
-              <FileText size={18} style={{ marginRight: 12, marginTop: 2 }} />
-              <Box>
-                <Typography variant="body2" fontWeight="bold">
-                  Nouveau plan ajouté
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Il y a 5 minutes
-                </Typography>
-              </Box>
-            </Box>
+        {isAdmin && isAdminMode && (
+          <MenuItem onClick={handleAdminMode}>
+            <ListItemIcon>
+              <SettingsIcon fontSize="small" />
+            </ListItemIcon>
+            Mode normal
           </MenuItem>
-          <MenuItem onClick={handleNotificationsClose}>
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', py: 1 }}>
-              <Settings size={18} style={{ marginRight: 12, marginTop: 2 }} />
-              <Box>
-                <Typography variant="body2" fontWeight="bold">
-                  Mise à jour système
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Il y a 2 heures
-                </Typography>
-              </Box>
-            </Box>
-          </MenuItem>
-          <MenuItem onClick={handleNotificationsClose}>
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', py: 1 }}>
-              <User size={18} style={{ marginRight: 12, marginTop: 2 }} />
-              <Box>
-                <Typography variant="body2" fontWeight="bold">
-                  Nouvel utilisateur
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Hier à 14:30
-                </Typography>
-              </Box>
-            </Box>
-          </MenuItem>
-          <Box sx={{ p: 2, borderTop: '1px solid #eee', textAlign: 'center' }}>
-            <Button size="small" onClick={handleNotificationsClose}>
-              Voir toutes les notifications
-            </Button>
-          </Box>
-        </Menu>
+        )}
         
-        {/* Menu utilisateur */}
-        <Box sx={{ ml: 1 }}>
-          <Tooltip title="Paramètres du compte">
-            <IconButton onClick={handleUserMenuOpen} sx={{ p: 0 }}>
-              <Avatar 
-                alt={currentUser?.email || 'User'} 
-                src="/static/avatar.jpg"
-                sx={{ 
-                  bgcolor: 'secondary.main',
-                  border: '2px solid white'
-                }}
-              >
-                {currentUser?.email?.charAt(0).toUpperCase() || 'U'}
-              </Avatar>
+        <MenuItem onClick={handleLogout}>
+          <ListItemIcon>
+            <LogoutIcon fontSize="small" />
+          </ListItemIcon>
+          Déconnexion
+        </MenuItem>
+      </Menu>
+      
+      {/* Menu mobile */}
+      <Drawer
+        anchor="left"
+        open={mobileMenuOpen}
+        onClose={toggleMobileMenu}
+      >
+        <Box
+          sx={{ width: 250 }}
+          role="presentation"
+        >
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            p: 2,
+            borderBottom: 1,
+            borderColor: 'divider'
+          }}>
+            <Typography variant="h6">Menu</Typography>
+            <IconButton onClick={toggleMobileMenu}>
+              <CloseIcon />
             </IconButton>
-          </Tooltip>
-          <Menu
-            anchorEl={userMenuAnchor}
-            open={Boolean(userMenuAnchor)}
-            onClose={handleUserMenuClose}
-          >
-            <Box sx={{ px: 2, py: 1 }}>
-              <Typography variant="subtitle2">
-                {currentUser?.email || 'Utilisateur'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {isAdmin ? 'Administrateur' : 'Utilisateur standard'}
-              </Typography>
-            </Box>
-            <MenuItem onClick={handleUserMenuClose}>
-              <User size={18} style={{ marginRight: 8 }} />
-              Profil
-            </MenuItem>
-            <MenuItem onClick={handleUserMenuClose}>
-              <Settings size={18} style={{ marginRight: 8 }} />
-              Paramètres
-            </MenuItem>
-            <MenuItem onClick={handleUserMenuClose}>
-              <HelpCircle size={18} style={{ marginRight: 8 }} />
-              Aide
-            </MenuItem>
-            {isAdmin && (
-              <MenuItem onClick={handleAdminModeToggle}>
-                <Settings size={18} style={{ marginRight: 8 }} />
-                {isAdminMode ? 'Mode normal' : 'Mode admin'}
-              </MenuItem>
+          </Box>
+          
+          <List>
+            <ListItem button onClick={toggleSidebar}>
+              <ListItemIcon>
+                <PdfIcon />
+              </ListItemIcon>
+              <ListItemText primary="Gestion du plan" />
+            </ListItem>
+            
+            <ListItem button onClick={handleOpenAITools}>
+              <ListItemIcon>
+                <MagicIcon />
+              </ListItemIcon>
+              <ListItemText primary="Assistant IA" />
+            </ListItem>
+            
+            <Divider sx={{ my: 1 }} />
+            
+            <ListItem>
+              <ListItemIcon>
+                <Badge badgeContent={cameras.length} color="primary">
+                  <CameraIcon />
+                </Badge>
+              </ListItemIcon>
+              <ListItemText primary="Caméras" secondary={`${cameras.length} sur le plan`} />
+            </ListItem>
+            
+            <ListItem>
+              <ListItemIcon>
+                <Badge badgeContent={comments.length} color="secondary">
+                  <CommentIcon />
+                </Badge>
+              </ListItemIcon>
+              <ListItemText primary="Commentaires" secondary={`${comments.length} sur le plan`} />
+            </ListItem>
+            
+            <Divider sx={{ my: 1 }} />
+            
+            {isAdmin && !isAdminMode && (
+              <ListItem button onClick={handleAdminMode}>
+                <ListItemIcon>
+                  <AdminIcon />
+                </ListItemIcon>
+                <ListItemText primary="Mode administrateur" />
+              </ListItem>
             )}
-            <MenuItem onClick={handleLogout}>
-              <LogOut size={18} style={{ marginRight: 8 }} />
-              Déconnexion
-            </MenuItem>
-          </Menu>
+            
+            {isAdmin && isAdminMode && (
+              <ListItem button onClick={handleAdminMode}>
+                <ListItemIcon>
+                  <SettingsIcon />
+                </ListItemIcon>
+                <ListItemText primary="Mode normal" />
+              </ListItem>
+            )}
+            
+            <ListItem button onClick={handleLogout}>
+              <ListItemIcon>
+                <LogoutIcon />
+              </ListItemIcon>
+              <ListItemText primary="Déconnexion" />
+            </ListItem>
+          </List>
         </Box>
-      </Toolbar>
-    </AppBar>
+      </Drawer>
+    </>
   );
 };
 
