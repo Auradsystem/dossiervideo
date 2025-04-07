@@ -12,6 +12,32 @@ const PdfPreview: React.FC = () => {
   const [pdfDimensions, setPdfDimensions] = useState({ width: 0, height: 0 });
   const [isSyncEnabled, setIsSyncEnabled] = useState<boolean>(true);
   const [scaleChanged, setScaleChanged] = useState<boolean>(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
+  // Observer pour détecter les changements de taille du conteneur
+  useEffect(() => {
+    if (!containerRef.current || !isPreviewOpen) return;
+
+    const updateContainerSize = () => {
+      if (containerRef.current) {
+        setContainerSize({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight
+        });
+      }
+    };
+
+    // Mettre à jour la taille initiale
+    updateContainerSize();
+
+    // Créer un ResizeObserver pour surveiller les changements de taille
+    const resizeObserver = new ResizeObserver(updateContainerSize);
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [isPreviewOpen]);
 
   // Synchroniser l'échelle du document de travail vers la prévisualisation à l'ouverture
   useEffect(() => {
@@ -48,6 +74,27 @@ const PdfPreview: React.FC = () => {
                               (iframeRef.current.contentWindow?.document);
                               
         if (iframeDocument) {
+          // Modifier le style du document pour supprimer les marges
+          const style = iframeDocument.createElement('style');
+          style.textContent = `
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              overflow: hidden !important;
+              width: 100% !important;
+              height: 100% !important;
+              background-color: white !important;
+            }
+            embed, object, iframe {
+              width: 100% !important;
+              height: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              border: none !important;
+            }
+          `;
+          iframeDocument.head.appendChild(style);
+          
           const pdfElement = iframeDocument.querySelector('embed') || 
                             iframeDocument.body;
           
@@ -82,8 +129,8 @@ const PdfPreview: React.FC = () => {
   const handleFitToScreen = () => {
     if (containerRef.current && pdfDimensions.width > 0) {
       const container = containerRef.current;
-      const containerWidth = container.clientWidth - 20; // Réduire les marges
-      const containerHeight = container.clientHeight - 20;
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
       
       const widthRatio = containerWidth / pdfDimensions.width;
       const heightRatio = containerHeight / pdfDimensions.height;
@@ -109,14 +156,16 @@ const PdfPreview: React.FC = () => {
     <Dialog
       open={isPreviewOpen}
       onClose={handleClose}
-      maxWidth="lg"
+      maxWidth="xl"
       fullWidth
       PaperProps={{
         sx: {
-          height: '90vh',
-          maxHeight: '90vh',
+          height: '95vh',
+          maxHeight: '95vh',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          m: 0,
+          borderRadius: 0
         }
       }}
     >
@@ -198,13 +247,16 @@ const PdfPreview: React.FC = () => {
       <DialogContent 
         ref={containerRef}
         sx={{ 
-          p: 0, // Suppression des paddings pour que le PDF prenne toute la place
+          p: 0,
+          m: 0,
           flexGrow: 1, 
           display: 'flex', 
           flexDirection: 'column',
           overflow: 'hidden',
           position: 'relative',
-          bgcolor: '#ffffff' // Fond blanc pour éviter les marges grises
+          bgcolor: '#ffffff',
+          width: '100%',
+          height: '100%'
         }}
       >
         {isLoading && (
@@ -226,7 +278,8 @@ const PdfPreview: React.FC = () => {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            overflow: 'auto'
+            overflow: 'hidden',
+            position: 'relative'
           }}>
             <div
               style={{
@@ -235,8 +288,13 @@ const PdfPreview: React.FC = () => {
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                minHeight: '100%',
-                minWidth: '100%'
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                height: '100%'
               }}
             >
               <iframe
@@ -244,12 +302,15 @@ const PdfPreview: React.FC = () => {
                 src={previewUrl}
                 onLoad={handleIframeLoad}
                 style={{
-                  width: pdfDimensions.width > 0 ? pdfDimensions.width : '100%',
-                  height: pdfDimensions.height > 0 ? pdfDimensions.height : '100%',
+                  width: '100%',
+                  height: '100%',
                   border: 'none',
-                  backgroundColor: 'white'
+                  backgroundColor: 'white',
+                  display: 'block'
                 }}
                 title="PDF Preview"
+                frameBorder="0"
+                scrolling="no"
               />
             </div>
           </Box>
@@ -259,7 +320,8 @@ const PdfPreview: React.FC = () => {
       <DialogActions sx={{ 
         borderTop: '1px solid rgba(0, 0, 0, 0.12)',
         display: 'flex',
-        justifyContent: 'space-between'
+        justifyContent: 'space-between',
+        p: 1
       }}>
         <Typography variant="body2" color={isSyncEnabled ? 'primary' : 'text.secondary'} sx={{ ml: 2 }}>
           {isSyncEnabled 
