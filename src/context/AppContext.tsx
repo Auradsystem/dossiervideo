@@ -597,60 +597,88 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return colors[Math.floor(Math.random() * colors.length)];
   };
 
-  // Fonction pour capturer l'état exact du canvas avec les caméras - optimisée
+  // Fonction améliorée pour capturer l'état exact du canvas avec les caméras
   const captureCanvas = async (): Promise<HTMLCanvasElement | null> => {
     return new Promise((resolve) => {
-      // Limiter le temps d'attente à 2 secondes maximum
+      // Limiter le temps d'attente à 3 secondes maximum
       const timeout = setTimeout(() => {
         console.warn('Capture du canvas timeout dépassé');
         resolve(null);
-      }, 2000);
+      }, 3000);
 
-      // Chercher les canvas
-      const findCanvases = () => {
-        const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
-        const konvaCanvas = document.querySelector('.konvajs-content canvas');
-        
-        if (!pdfCanvas || !konvaCanvas) {
-          console.error('Canvas non trouvés');
-          clearTimeout(timeout);
-          resolve(null);
-          return;
+      // Fonction pour capturer les canvas
+      const captureCanvases = () => {
+        try {
+          // Sélectionner le canvas du PDF et le canvas Konva avec plus de précision
+          const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
+          const konvaStage = document.querySelector('.konvajs-content');
+          const konvaCanvas = konvaStage?.querySelector('canvas');
+          
+          if (!pdfCanvas || !konvaCanvas) {
+            console.error('Canvas non trouvés', { 
+              pdfCanvas: !!pdfCanvas, 
+              konvaCanvas: !!konvaCanvas 
+            });
+            return null;
+          }
+          
+          // Créer un canvas temporaire pour combiner les deux
+          const tempCanvas = document.createElement('canvas');
+          const ctx = tempCanvas.getContext('2d');
+          
+          if (!ctx) {
+            console.error('Impossible de créer un contexte 2D');
+            return null;
+          }
+          
+          // Obtenir les dimensions réelles du canvas PDF
+          const pdfWidth = pdfCanvas.width;
+          const pdfHeight = pdfCanvas.height;
+          
+          // Définir les dimensions du canvas temporaire pour correspondre exactement au PDF
+          tempCanvas.width = pdfWidth;
+          tempCanvas.height = pdfHeight;
+          
+          // Appliquer l'échelle actuelle au contexte
+          ctx.save();
+          
+          // Dessiner d'abord le PDF avec une haute qualité
+          ctx.drawImage(pdfCanvas, 0, 0, pdfWidth, pdfHeight);
+          
+          // Dessiner le canvas Konva par-dessus avec la même échelle
+          ctx.drawImage(konvaCanvas, 0, 0, pdfWidth, pdfHeight);
+          
+          ctx.restore();
+          
+          return tempCanvas;
+        } catch (error) {
+          console.error('Erreur lors de la capture des canvas:', error);
+          return null;
         }
-        
-        // Créer un canvas temporaire pour combiner les deux
-        const tempCanvas = document.createElement('canvas');
-        const ctx = tempCanvas.getContext('2d');
-        
-        if (!ctx) {
-          console.error('Impossible de créer un contexte 2D');
-          clearTimeout(timeout);
-          resolve(null);
-          return;
-        }
-        
-        // Définir les dimensions du canvas temporaire
-        tempCanvas.width = pdfCanvas.width;
-        tempCanvas.height = pdfCanvas.height;
-        
-        // Dessiner d'abord le PDF
-        ctx.drawImage(pdfCanvas, 0, 0);
-        
-        // Puis dessiner le canvas Konva par-dessus
-        ctx.drawImage(konvaCanvas, 0, 0);
-        
-        clearTimeout(timeout);
-        resolve(tempCanvas);
       };
 
-      // Essayer de trouver les canvas immédiatement, puis réessayer après un délai
-      findCanvases();
-      // Réessayer une fois de plus après un court délai
-      setTimeout(findCanvases, 100);
+      // Essayer de capturer immédiatement
+      const attemptCapture = () => {
+        const canvas = captureCanvases();
+        if (canvas) {
+          clearTimeout(timeout);
+          resolve(canvas);
+        } else {
+          // Si la première tentative échoue, réessayer après un court délai
+          setTimeout(() => {
+            const retryCanvas = captureCanvases();
+            clearTimeout(timeout);
+            resolve(retryCanvas);
+          }, 200);
+        }
+      };
+
+      // Attendre un court délai pour s'assurer que le rendu est terminé
+      setTimeout(attemptCapture, 100);
     });
   };
 
-  // Fonction pour prévisualiser le PDF de la page courante
+  // Fonction améliorée pour prévisualiser le PDF de la page courante
   const previewPdf = async () => {
     console.log(`Prévisualisation du PDF pour la page ${page}`);
     
@@ -661,18 +689,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     
     try {
+      // Attendre un court délai pour s'assurer que le rendu est terminé
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       // Capturer le canvas combiné
       const combinedCanvas = await captureCanvas();
       
       if (!combinedCanvas) {
-        console.error('Échec de la capture du canvas');
+        console.error('Échec de la capture du canvas pour la prévisualisation');
         return;
       }
       
       // Déterminer l'orientation en fonction du ratio largeur/hauteur
       const orientation = combinedCanvas.width > combinedCanvas.height ? 'landscape' : 'portrait';
       
-      // Créer le PDF avec les dimensions appropriées
+      // Créer le PDF avec les dimensions exactes du canvas
       const pdf = new jsPDF({
         orientation: orientation,
         unit: 'px',
@@ -684,10 +715,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      // Obtenir les données d'image du canvas avec une haute qualité
+      // Obtenir les données d'image du canvas avec une qualité maximale
       const imageData = combinedCanvas.toDataURL('image/jpeg', 1.0);
       
-      // Ajouter l'image au PDF
+      // Ajouter l'image au PDF avec des dimensions précises
       pdf.addImage({
         imageData: imageData,
         format: 'JPEG',
@@ -705,29 +736,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setPreviewUrl(url);
       setIsPreviewOpen(true);
       
-      console.log('URL de prévisualisation créée');
+      console.log('URL de prévisualisation créée avec succès');
     } catch (error) {
       console.error('Erreur lors de la génération de la prévisualisation:', error);
     }
   };
 
-  // Fonction pour exporter le PDF de la page courante
+  // Fonction améliorée pour exporter le PDF de la page courante
   const exportCurrentPage = async () => {
     console.log(`Export du PDF pour la page ${page}`);
     
     try {
+      // Attendre un court délai pour s'assurer que le rendu est terminé
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       // Capturer le canvas combiné
       const combinedCanvas = await captureCanvas();
       
       if (!combinedCanvas) {
-        console.error('Échec de la capture du canvas');
+        console.error('Échec de la capture du canvas pour l\'export');
         return;
       }
       
       // Déterminer l'orientation en fonction du ratio largeur/hauteur
       const orientation = combinedCanvas.width > combinedCanvas.height ? 'landscape' : 'portrait';
       
-      // Créer le PDF avec les dimensions appropriées
+      // Créer le PDF avec les dimensions exactes du canvas
       const pdf = new jsPDF({
         orientation: orientation,
         unit: 'px',
@@ -739,10 +773,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      // Obtenir les données d'image du canvas avec une haute qualité
+      // Obtenir les données d'image du canvas avec une qualité maximale
       const imageData = combinedCanvas.toDataURL('image/jpeg', 1.0);
       
-      // Ajouter l'image au PDF
+      // Ajouter l'image au PDF avec des dimensions précises
       pdf.addImage({
         imageData: imageData,
         format: 'JPEG',
@@ -762,7 +796,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Fonction pour exporter toutes les pages en un seul PDF - optimisée
+  // Fonction améliorée pour exporter toutes les pages en un seul PDF
   const exportPdf = async () => {
     console.log('Export de toutes les pages en un seul PDF');
     
@@ -798,19 +832,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setPage(pageNum);
         
         // Attendre que le rendu de la page soit terminé
-        // Cette attente est cruciale pour que le PDF soit correctement rendu
-        await new Promise(resolve => setTimeout(resolve, 500)); // Réduit à 500ms au lieu de 1000ms
+        await new Promise(resolve => setTimeout(resolve, 800));
         
-        // Capturer le canvas de cette page avec timeout
-        const capturePromise = captureCanvas();
-        const timeoutPromise = new Promise<HTMLCanvasElement | null>(resolve => {
-          setTimeout(() => {
-            console.warn(`Timeout de capture pour la page ${pageNum}`);
-            resolve(null);
-          }, 1500);
-        });
-        
-        const combinedCanvas = await Promise.race([capturePromise, timeoutPromise]);
+        // Capturer le canvas de cette page
+        const combinedCanvas = await captureCanvas();
         
         if (!combinedCanvas) {
           console.error(`Échec de la capture du canvas pour la page ${pageNum}`);
@@ -830,7 +855,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           isFirstPage = false;
         }
         
-        // Obtenir les données d'image du canvas avec une haute qualité
+        // Obtenir les données d'image du canvas avec une qualité maximale
         const imageData = combinedCanvas.toDataURL('image/jpeg', 1.0);
         
         // Ajouter l'image à la page courante du PDF

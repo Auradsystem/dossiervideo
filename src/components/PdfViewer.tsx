@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Box, Paper, Typography, IconButton, Slider, Button } from '@mui/material';
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Trash2, MessageSquare } from 'lucide-react';
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Trash2, MessageSquare, Eye } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Stage, Layer } from 'react-konva';
 import { useAppContext } from '../context/AppContext';
@@ -28,7 +28,8 @@ const PdfViewer: React.FC = () => {
     setIsAddingComment,
     selectedComment,
     setSelectedComment,
-    deleteComment
+    deleteComment,
+    previewPdf
   } = useAppContext();
   
   const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
@@ -87,9 +88,11 @@ const PdfViewer: React.FC = () => {
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         
+        // Utiliser des options de rendu de haute qualité
         await pdfPage.render({
           canvasContext: context,
           viewport,
+          intent: 'print', // Utiliser 'print' pour une meilleure qualité
         }).promise;
         
         setPdfPageRendered(canvas);
@@ -198,6 +201,10 @@ const PdfViewer: React.FC = () => {
     }
   };
 
+  const handlePreview = () => {
+    previewPdf();
+  };
+
   return (
     <Box 
       sx={{ 
@@ -271,7 +278,13 @@ const PdfViewer: React.FC = () => {
               }}
             >
               <Box sx={{ position: 'relative' }}>
-                <canvas ref={canvasRef} style={{ display: 'block' }} />
+                <canvas 
+                  ref={canvasRef} 
+                  style={{ 
+                    display: 'block',
+                    boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+                  }} 
+                />
                 {pdfPageRendered && (
                   <Stage 
                     ref={stageRef}
@@ -347,6 +360,17 @@ const PdfViewer: React.FC = () => {
                 sx={{ mr: 1 }}
               >
                 {isAddingComment ? "Placer commentaire" : "Ajouter commentaire"}
+              </Button>
+              
+              <Button
+                startIcon={<Eye size={16} />}
+                color="primary"
+                variant="outlined"
+                size="small"
+                onClick={handlePreview}
+                sx={{ mr: 1 }}
+              >
+                Prévisualiser
               </Button>
               
               {selectedComment && (

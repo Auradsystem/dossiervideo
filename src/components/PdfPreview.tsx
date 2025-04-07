@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Dialog, DialogContent, DialogActions, Button, IconButton, Slider, Typography, CircularProgress, Switch, FormControlLabel, Tooltip } from '@mui/material';
-import { X, ZoomIn, ZoomOut, Maximize, Link, AlertCircle } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Maximize, Link, AlertCircle, Download } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 const PdfPreview: React.FC = () => {
-  const { previewUrl, isPreviewOpen, setIsPreviewOpen, scale, setScale } = useAppContext();
+  const { previewUrl, isPreviewOpen, setIsPreviewOpen, scale, setScale, exportCurrentPage } = useAppContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [previewScale, setPreviewScale] = useState<number>(1);
@@ -35,7 +35,7 @@ const PdfPreview: React.FC = () => {
       
       return () => clearTimeout(timer);
     }
-  }, [previewScale, isSyncEnabled, isPreviewOpen, isLoading]);
+  }, [previewScale, isSyncEnabled, isPreviewOpen, isLoading, scale, setScale]);
 
   // Gérer le chargement de l'iframe
   const handleIframeLoad = () => {
@@ -60,9 +60,6 @@ const PdfPreview: React.FC = () => {
               width: naturalWidth,
               height: naturalHeight
             });
-            
-            // Nous ne faisons plus d'ajustement automatique initial
-            // pour garantir que la prévisualisation corresponde exactement au document de travail
           }
         }
       } catch (e) {
@@ -99,6 +96,10 @@ const PdfPreview: React.FC = () => {
 
   const toggleSync = () => {
     setIsSyncEnabled(!isSyncEnabled);
+  };
+
+  const handleExport = () => {
+    exportCurrentPage();
   };
 
   return (
@@ -176,6 +177,15 @@ const PdfPreview: React.FC = () => {
             }
             sx={{ ml: 1 }}
           />
+          <Button
+            startIcon={<Download size={16} />}
+            variant="outlined"
+            size="small"
+            onClick={handleExport}
+            sx={{ ml: 2 }}
+          >
+            Exporter
+          </Button>
         </Box>
         <IconButton onClick={handleClose} size="small">
           <X size={20} />
@@ -190,7 +200,8 @@ const PdfPreview: React.FC = () => {
           display: 'flex', 
           flexDirection: 'column',
           overflow: 'hidden',
-          position: 'relative'
+          position: 'relative',
+          bgcolor: '#f5f5f5' // Fond gris clair pour mieux voir les bords du PDF
         }}
       >
         {isLoading && (
