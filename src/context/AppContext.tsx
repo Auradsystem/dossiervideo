@@ -409,7 +409,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const paddedNumber = String(nextCameraNumber).padStart(3, '0');
     const newCameraName = `${namingPattern}${paddedNumber}`;
     
-    const newCamera:    const newCamera: Camera = {
+    const newCamera: Camera = {
       id: uuidv4(),
       name: newCameraName,
       x,
