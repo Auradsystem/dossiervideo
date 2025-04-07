@@ -1,33 +1,68 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Dialog, DialogContent, DialogActions, Button, IconButton, Slider, Typography } from '@mui/material';
-import { X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Box, Dialog, DialogContent, DialogActions, Button, IconButton, Slider, Typography, CircularProgress } from '@mui/material';
+import { X, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 const PdfPreview: React.FC = () => {
   const { previewUrl, isPreviewOpen, setIsPreviewOpen, scale } = useAppContext();
   const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [previewScale, setPreviewScale] = useState<number>(1);
-  const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [pdfDimensions, setPdfDimensions] = useState({ width: 0, height: 0 });
 
   // Synchroniser l'échelle avec le document de travail à l'ouverture
   useEffect(() => {
-    setPreviewScale(scale);
+    if (isPreviewOpen) {
+      setPreviewScale(scale);
+      setIsLoading(true);
+    }
   }, [scale, isPreviewOpen]);
 
-  // Ajuster l'échelle pour respecter les proportions d'origine
-  useEffect(() => {
-    if (containerRef.current && isPreviewOpen) {
-      const container = containerRef.current;
-      const containerWidth = container.clientWidth;
-      const containerHeight = container.clientHeight;
-      
-      // Ajuster dynamiquement pour maintenir l'échelle correcte
-      setContentSize({
-        width: containerWidth,
-        height: containerHeight
-      });
+  // Gérer le chargement de l'iframe
+  const handleIframeLoad = () => {
+    setIsLoading(false);
+    
+    if (iframeRef.current && containerRef.current) {
+      try {
+        // Accéder au document dans l'iframe pour obtenir les dimensions réelles du PDF
+        const iframeDocument = iframeRef.current.contentDocument || 
+                              (iframeRef.current.contentWindow?.document);
+                              
+        if (iframeDocument) {
+          const pdfElement = iframeDocument.querySelector('embed') || 
+                            iframeDocument.body;
+          
+          if (pdfElement) {
+            // Récupérer les dimensions naturelles
+            const naturalWidth = pdfElement.scrollWidth;
+            const naturalHeight = pdfElement.scrollHeight;
+            
+            setPdfDimensions({
+              width: naturalWidth,
+              height: naturalHeight
+            });
+            
+            // Ajustement automatique pour la meilleure visualisation
+            if (containerRef.current) {
+              const container = containerRef.current;
+              const containerWidth = container.clientWidth - 40; // Soustraire le padding
+              const containerHeight = container.clientHeight - 40;
+              
+              // Calculer le ratio pour s'adapter correctement
+              const widthRatio = containerWidth / naturalWidth;
+              const heightRatio = containerHeight / naturalHeight;
+              const fitRatio = Math.min(widthRatio, heightRatio, 1); // Ne pas agrandir au-delà de 100%
+              
+              setPreviewScale(fitRatio);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Erreur lors de l'accès au contenu de l'iframe:", e);
+      }
     }
-  }, [isPreviewOpen, previewScale]);
+  };
 
   const handleZoomIn = () => {
     setPreviewScale(prev => Math.min(prev + 0.1, 3));
@@ -35,6 +70,20 @@ const PdfPreview: React.FC = () => {
 
   const handleZoomOut = () => {
     setPreviewScale(prev => Math.max(prev - 0.1, 0.5));
+  };
+
+  const handleFitToScreen = () => {
+    if (containerRef.current && pdfDimensions.width > 0) {
+      const container = containerRef.current;
+      const containerWidth = container.clientWidth - 40;
+      const containerHeight = container.clientHeight - 40;
+      
+      const widthRatio = containerWidth / pdfDimensions.width;
+      const heightRatio = containerHeight / pdfDimensions.height;
+      const fitRatio = Math.min(widthRatio, heightRatio, 1);
+      
+      setPreviewScale(fitRatio);
+    }
   };
 
   const handleClose = () => {
@@ -69,18 +118,21 @@ const PdfPreview: React.FC = () => {
           </IconButton>
           <Slider
             value={previewScale}
-            min={0.5}
+            min={0.1}
             max={3}
-            step={0.1}
+            step={0.05}
             onChange={(_, value) => setPreviewScale(value as number)}
             sx={{ width: 100 }}
           />
           <IconButton onClick={handleZoomIn} size="small">
             <ZoomIn size={20} />
           </IconButton>
-          <Typography variant="body2">
+          <Typography variant="body2" sx={{ minWidth: '50px' }}>
             {Math.round(previewScale * 100)}%
           </Typography>
+          <IconButton onClick={handleFitToScreen} size="small" title="Ajuster à l'écran">
+            <Maximize size={18} />
+          </IconButton>
         </Box>
         <IconButton onClick={handleClose} size="small">
           <X size={20} />
@@ -90,41 +142,56 @@ const PdfPreview: React.FC = () => {
       <DialogContent 
         ref={containerRef}
         sx={{ 
-          p: 0, 
+          p: 2, 
           flexGrow: 1, 
           display: 'flex', 
           flexDirection: 'column',
-          overflow: 'auto',
+          overflow: 'hidden',
           position: 'relative'
         }}
       >
+        {isLoading && (
+          <Box sx={{ 
+            position: 'absolute', 
+            top: '50%', 
+            left: '50%', 
+            transform: 'translate(-50%, -50%)',
+            zIndex: 2
+          }}>
+            <CircularProgress />
+          </Box>
+        )}
+        
         {previewUrl && (
           <Box sx={{ 
             width: '100%', 
             height: '100%',
             display: 'flex',
             justifyContent: 'center',
-            alignItems: 'flex-start',
-            overflow: 'auto',
-            padding: 2
+            alignItems: 'center',
+            overflow: 'auto'
           }}>
             <div
               style={{
                 transform: `scale(${previewScale})`,
-                transformOrigin: 'center top',
-                width: '100%',
-                height: '100%',
+                transformOrigin: 'center center',
                 display: 'flex',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '100%',
+                minWidth: '100%'
               }}
             >
               <iframe
+                ref={iframeRef}
                 src={previewUrl}
+                onLoad={handleIframeLoad}
                 style={{
-                  width: '100%',
-                  height: contentSize.height / previewScale,
+                  width: pdfDimensions.width > 0 ? pdfDimensions.width : '100%',
+                  height: pdfDimensions.height > 0 ? pdfDimensions.height : '100%',
                   border: 'none',
-                  boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+                  boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                  backgroundColor: 'white'
                 }}
                 title="PDF Preview"
               />
