@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Dialog, DialogContent, DialogActions, Button, IconButton, Slider, Typography, CircularProgress, Switch, FormControlLabel, Tooltip } from '@mui/material';
-import { X, ZoomIn, ZoomOut, Maximize, Link, LinkOff, AlertCircle } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Maximize, Link, AlertCircle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 const PdfPreview: React.FC = () => {
@@ -161,15 +161,16 @@ const PdfPreview: React.FC = () => {
             }
             label={
               <Box sx={{ display: 'flex', alignItems: 'center', ml: -1 }}>
-                {isSyncEnabled ? (
-                  <Tooltip title="Synchronisation activée">
-                    <Link size={16} style={{ marginRight: 4 }} />
-                  </Tooltip>
-                ) : (
-                  <Tooltip title="Synchronisation désactivée">
-                    <LinkOff size={16} style={{ marginRight: 4 }} />
-                  </Tooltip>
-                )}
+                <Tooltip title={isSyncEnabled ? "Synchronisation activée" : "Synchronisation désactivée"}>
+                  <Link 
+                    size={16} 
+                    style={{ 
+                      marginRight: 4,
+                      opacity: isSyncEnabled ? 1 : 0.4,
+                      color: isSyncEnabled ? undefined : '#999'
+                    }} 
+                  />
+                </Tooltip>
                 <Typography variant="body2">Sync</Typography>
               </Box>
             }
