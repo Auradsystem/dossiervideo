@@ -609,72 +609,91 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Fonction pour capturer les canvas
       const captureCanvases = () => {
         try {
-          // Sélectionner le canvas du PDF et le canvas Konva avec plus de précision
-          const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
-          const konvaStage = document.querySelector('.konvajs-content');
-          const konvaCanvas = konvaStage?.querySelector('canvas');
+          // Désélectionner toute caméra ou commentaire avant la capture
+          const previousSelectedCamera = selectedCamera;
+          const previousSelectedComment = selectedComment;
           
-          if (!pdfCanvas || !konvaCanvas) {
-            console.error('Canvas non trouvés', { 
-              pdfCanvas: !!pdfCanvas, 
-              konvaCanvas: !!konvaCanvas 
-            });
-            return null;
-          }
+          // Temporairement désélectionner pour la capture
+          setSelectedCamera(null);
+          setSelectedComment(null);
           
-          // Créer un canvas temporaire pour combiner les deux
-          const tempCanvas = document.createElement('canvas');
-          const ctx = tempCanvas.getContext('2d');
-          
-          if (!ctx) {
-            console.error('Impossible de créer un contexte 2D');
-            return null;
-          }
-          
-          // Obtenir les dimensions réelles du canvas PDF
-          const pdfWidth = pdfCanvas.width;
-          const pdfHeight = pdfCanvas.height;
-          
-          // Définir les dimensions du canvas temporaire pour correspondre exactement au PDF
-          tempCanvas.width = pdfWidth;
-          tempCanvas.height = pdfHeight;
-          
-          // Appliquer l'échelle actuelle au contexte
-          ctx.save();
-          
-          // Dessiner d'abord le PDF avec une haute qualité
-          ctx.drawImage(pdfCanvas, 0, 0, pdfWidth, pdfHeight);
-          
-          // Dessiner le canvas Konva par-dessus avec la même échelle
-          ctx.drawImage(konvaCanvas, 0, 0, pdfWidth, pdfHeight);
-          
-          ctx.restore();
-          
-          return tempCanvas;
-        } catch (error) {
-          console.error('Erreur lors de la capture des canvas:', error);
-          return null;
-        }
-      };
-
-      // Essayer de capturer immédiatement
-      const attemptCapture = () => {
-        const canvas = captureCanvases();
-        if (canvas) {
-          clearTimeout(timeout);
-          resolve(canvas);
-        } else {
-          // Si la première tentative échoue, réessayer après un court délai
+          // Attendre que le rendu soit mis à jour sans sélection
           setTimeout(() => {
-            const retryCanvas = captureCanvases();
-            clearTimeout(timeout);
-            resolve(retryCanvas);
-          }, 200);
+            try {
+              // Sélectionner le canvas du PDF et le canvas Konva avec plus de précision
+              const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
+              const konvaStage = document.querySelector('.konvajs-content');
+              const konvaCanvas = konvaStage?.querySelector('canvas');
+              
+              if (!pdfCanvas || !konvaCanvas) {
+                console.error('Canvas non trouvés', { 
+                  pdfCanvas: !!pdfCanvas, 
+                  konvaCanvas: !!konvaCanvas 
+                });
+                
+                // Restaurer les sélections précédentes
+                setSelectedCamera(previousSelectedCamera);
+                setSelectedComment(previousSelectedComment);
+                clearTimeout(timeout);
+                resolve(null);
+                return;
+              }
+              
+              // Créer un canvas temporaire pour combiner les deux
+              const tempCanvas = document.createElement('canvas');
+              const ctx = tempCanvas.getContext('2d');
+              
+              if (!ctx) {
+                console.error('Impossible de créer un contexte 2D');
+                
+                // Restaurer les sélections précédentes
+                setSelectedCamera(previousSelectedCamera);
+                setSelectedComment(previousSelectedComment);
+                clearTimeout(timeout);
+                resolve(null);
+                return;
+              }
+              
+              // Obtenir les dimensions réelles du canvas PDF
+              const pdfWidth = pdfCanvas.width;
+              const pdfHeight = pdfCanvas.height;
+              
+              // Définir les dimensions du canvas temporaire pour correspondre exactement au PDF
+              tempCanvas.width = pdfWidth;
+              tempCanvas.height = pdfHeight;
+              
+              // Dessiner d'abord le PDF avec une haute qualité
+              ctx.drawImage(pdfCanvas, 0, 0, pdfWidth, pdfHeight);
+              
+              // Dessiner le canvas Konva par-dessus avec la même échelle
+              ctx.drawImage(konvaCanvas, 0, 0, pdfWidth, pdfHeight);
+              
+              // Restaurer les sélections précédentes après la capture
+              setSelectedCamera(previousSelectedCamera);
+              setSelectedComment(previousSelectedComment);
+              
+              clearTimeout(timeout);
+              resolve(tempCanvas);
+            } catch (error) {
+              console.error('Erreur lors de la capture des canvas:', error);
+              
+              // Restaurer les sélections précédentes en cas d'erreur
+              setSelectedCamera(previousSelectedCamera);
+              setSelectedComment(previousSelectedComment);
+              
+              clearTimeout(timeout);
+              resolve(null);
+            }
+          }, 100); // Petit délai pour s'assurer que le rendu est mis à jour sans sélection
+        } catch (error) {
+          console.error('Erreur lors de la préparation de la capture:', error);
+          clearTimeout(timeout);
+          resolve(null);
         }
       };
 
-      // Attendre un court délai pour s'assurer que le rendu est terminé
-      setTimeout(attemptCapture, 100);
+      // Lancer la capture
+      captureCanvases();
     });
   };
 

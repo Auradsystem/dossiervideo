@@ -60,6 +60,9 @@ const PdfPreview: React.FC = () => {
               width: naturalWidth,
               height: naturalHeight
             });
+            
+            // Appliquer automatiquement l'ajustement à l'écran
+            setTimeout(handleFitToScreen, 100);
           }
         }
       } catch (e) {
@@ -79,8 +82,8 @@ const PdfPreview: React.FC = () => {
   const handleFitToScreen = () => {
     if (containerRef.current && pdfDimensions.width > 0) {
       const container = containerRef.current;
-      const containerWidth = container.clientWidth - 40;
-      const containerHeight = container.clientHeight - 40;
+      const containerWidth = container.clientWidth - 20; // Réduire les marges
+      const containerHeight = container.clientHeight - 20;
       
       const widthRatio = containerWidth / pdfDimensions.width;
       const heightRatio = containerHeight / pdfDimensions.height;
@@ -195,13 +198,13 @@ const PdfPreview: React.FC = () => {
       <DialogContent 
         ref={containerRef}
         sx={{ 
-          p: 2, 
+          p: 0, // Suppression des paddings pour que le PDF prenne toute la place
           flexGrow: 1, 
           display: 'flex', 
           flexDirection: 'column',
           overflow: 'hidden',
           position: 'relative',
-          bgcolor: '#f5f5f5' // Fond gris clair pour mieux voir les bords du PDF
+          bgcolor: '#ffffff' // Fond blanc pour éviter les marges grises
         }}
       >
         {isLoading && (
@@ -244,7 +247,6 @@ const PdfPreview: React.FC = () => {
                   width: pdfDimensions.width > 0 ? pdfDimensions.width : '100%',
                   height: pdfDimensions.height > 0 ? pdfDimensions.height : '100%',
                   border: 'none',
-                  boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
                   backgroundColor: 'white'
                 }}
                 title="PDF Preview"
