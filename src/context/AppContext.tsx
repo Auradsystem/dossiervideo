@@ -129,6 +129,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  
+  // Variable pour suivre si l'initialisation est en cours
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
 
   // Caméras de la page courante
   const cameras = pageCameras[page] || [];
@@ -136,24 +139,78 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Commentaires de la page courante
   const comments = pageComments[page] || [];
 
-  // Initialiser Supabase au démarrage
+  // Vérification de session optimisée
+  const checkExistingSession = useCallback(async () => {
+    try {
+      // Vérifier d'abord si nous avons déjà une session en mémoire
+      const currentSession = supabase.auth.session();
+      
+      if (currentSession) {
+        // Si nous avons une session en mémoire, récupérer l'utilisateur
+        const user = currentSession.user;
+        if (user) {
+          const appUser: User = {
+            id: user.id,
+            username: user.email || '',
+            email: user.email || '',
+            isAdmin: user.user_metadata?.is_admin || false,
+            createdAt: new Date(user.created_at)
+          };
+          
+          setIsAuthenticated(true);
+          setCurrentUser(appUser);
+          setIsAdmin(appUser.isAdmin);
+          console.log('Session restaurée depuis la mémoire:', appUser);
+          return true;
+        }
+      }
+      
+      // Si pas de session en mémoire, faire l'appel API
+      const { session, user, error } = await supabaseAuth.getSession();
+      
+      if (session && user && !error) {
+        setIsAuthenticated(true);
+        setCurrentUser(user);
+        setIsAdmin(user.isAdmin);
+        console.log('Session restaurée depuis l\'API:', user);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Erreur lors de la vérification de session:', error);
+      return false;
+    }
+  }, []);
+
+  // Initialiser Supabase au démarrage - optimisé
   useEffect(() => {
     const initApp = async () => {
       try {
-        // Vérifier s'il y a une session active
-        const { session, user, error } = await supabaseAuth.getSession();
+        setIsInitializing(true);
         
-        if (session && user) {
-          setIsAuthenticated(true);
-          setCurrentUser(user);
-          setIsAdmin(user.isAdmin);
-          console.log('Session restaurée:', user);
-        } else {
-          // Initialiser les utilisateurs par défaut si nécessaire
-          await initializeDefaultUsers();
+        // Tenter de restaurer la session existante avec un timeout
+        const sessionPromise = checkExistingSession();
+        const timeoutPromise = new Promise<boolean>(resolve => {
+          setTimeout(() => resolve(false), 3000); // 3 secondes maximum
+        });
+        
+        const hasSession = await Promise.race([sessionPromise, timeoutPromise]);
+        
+        if (!hasSession) {
+          // Si pas de session, initialiser les utilisateurs par défaut en arrière-plan
+          setTimeout(() => {
+            initializeDefaultUsers().catch(err => {
+              console.error('Erreur lors de l\'initialisation des utilisateurs par défaut:', err);
+            });
+          }, 0);
         }
+        
+        // Marquer l'initialisation comme terminée
+        setIsInitializing(false);
       } catch (error) {
         console.error('Erreur lors de l\'initialisation de l\'application:', error);
+        setIsInitializing(false);
       }
     };
     
@@ -165,14 +222,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.log('Événement d\'authentification:', event);
         
         if (event === 'SIGNED_IN' && session) {
-          // Récupérer les informations utilisateur complètes
-          const { user, error } = await supabaseAuth.getSession();
+          // Extraire directement les informations utilisateur de la session
+          const user = session.user;
           
-          if (user && !error) {
+          if (user) {
+            const appUser: User = {
+              id: user.id,
+              username: user.email || '',
+              email: user.email || '',
+              isAdmin: user.user_metadata?.is_admin || false,
+              createdAt: new Date(user.created_at),
+              lastLogin: user.last_sign_in_at ? new Date(user.last_sign_in_at) : undefined
+            };
+            
             setIsAuthenticated(true);
-            setCurrentUser(user);
-            setIsAdmin(user.isAdmin);
-            console.log('Utilisateur connecté:', user);
+            setCurrentUser(appUser);
+            setIsAdmin(appUser.isAdmin);
+            console.log('Utilisateur connecté:', appUser);
+            
+            // Marquer la dernière synchronisation
+            setLastSyncTime(new Date());
           }
         } else if (event === 'SIGNED_OUT') {
           setIsAuthenticated(false);
@@ -188,7 +257,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [checkExistingSession]);
 
   // Journalisation pour le débogage
   useEffect(() => {
@@ -212,27 +281,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [previewUrl]);
 
+  // Version optimisée de la fonction login
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setIsSyncing(true);
+      setSyncError(null);
       
-      // Connexion via Supabase
-      const { user, error } = await supabaseAuth.signIn(email, password);
+      // Définir un timeout pour l'opération de connexion
+      const loginPromise = supabaseAuth.signIn(email, password);
+      const timeoutPromise = new Promise<{user: User | null, error: Error | null}>((_, reject) => {
+        setTimeout(() => reject(new Error('La connexion a pris trop de temps')), 10000);
+      });
+      
+      // Race entre le login et le timeout
+      const { user, error } = await Promise.race([loginPromise, timeoutPromise])
+        .catch(err => {
+          console.error('Erreur de timeout lors de la connexion:', err);
+          return { user: null, error: err };
+        });
       
       if (error) {
         console.error('Erreur de connexion:', error);
+        setSyncError(error.message);
         return false;
       }
       
       if (user) {
         // L'authentification est gérée par l'écouteur onAuthStateChange
         console.log('Connexion réussie');
+        setLastSyncTime(new Date());
         return true;
       }
       
       return false;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur lors de la connexion:', error);
+      setSyncError(error.message);
       return false;
     } finally {
       setIsSyncing(false);
@@ -243,38 +327,77 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       setIsSyncing(true);
       
-      // Déconnexion de Supabase
-      await supabaseAuth.signOut();
+      // Déconnexion de Supabase avec timeout
+      const logoutPromise = supabaseAuth.signOut();
+      const timeoutPromise = new Promise<{error: Error | null}>((_, reject) => {
+        setTimeout(() => reject(new Error('La déconnexion a pris trop de temps')), 5000);
+      });
       
-      // La déconnexion est gérée par l'écouteur onAuthStateChange
-    } catch (error) {
+      await Promise.race([logoutPromise, timeoutPromise])
+        .catch(err => {
+          console.error('Erreur de timeout lors de la déconnexion:', err);
+          // Forcer la déconnexion côté client même en cas d'erreur
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          setIsAdmin(false);
+          setIsAdminMode(false);
+        });
+      
+      // La déconnexion est aussi gérée par l'écouteur onAuthStateChange
+    } catch (error: any) {
       console.error('Erreur lors de la déconnexion:', error);
+      setSyncError(error.message);
+      
+      // Forcer la déconnexion côté client même en cas d'erreur
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setIsAdmin(false);
+      setIsAdminMode(false);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Fonction pour inscrire un nouvel utilisateur
+  // Fonction pour inscrire un nouvel utilisateur - optimisée
   const register = async (email: string, password: string, isAdmin: boolean): Promise<boolean> => {
     try {
       setIsSyncing(true);
+      setSyncError(null);
       
-      // Utiliser l'API standard de Supabase pour l'inscription
-      const { user, error } = await supabaseAuth.signUp(email, password, { is_admin: isAdmin });
+      if (!email || !password) {
+        setSyncError('Email et mot de passe requis');
+        return false;
+      }
+      
+      // Définir un timeout pour l'opération d'inscription
+      const signUpPromise = supabaseAuth.signUp(email, password, { is_admin: isAdmin });
+      const timeoutPromise = new Promise<{user: User | null, error: Error | null}>((_, reject) => {
+        setTimeout(() => reject(new Error('L\'inscription a pris trop de temps')), 10000);
+      });
+      
+      // Race entre l'inscription et le timeout
+      const { user, error } = await Promise.race([signUpPromise, timeoutPromise])
+        .catch(err => {
+          console.error('Erreur de timeout lors de l\'inscription:', err);
+          return { user: null, error: err };
+        });
       
       if (error) {
         console.error('Erreur d\'inscription:', error);
+        setSyncError(error.message);
         return false;
       }
       
       if (user) {
-        console.log('Inscription réussie via l\'API standard');
+        console.log('Inscription réussie');
+        setLastSyncTime(new Date());
         return true;
       }
       
       return false;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur lors de l\'inscription:', error);
+      setSyncError(error.message);
       return false;
     } finally {
       setIsSyncing(false);
@@ -286,7 +409,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const paddedNumber = String(nextCameraNumber).padStart(3, '0');
     const newCameraName = `${namingPattern}${paddedNumber}`;
     
-    const newCamera: Camera = {
+    const newCamera:    const newCamera: Camera = {
       id: uuidv4(),
       name: newCameraName,
       x,
@@ -474,43 +597,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return colors[Math.floor(Math.random() * colors.length)];
   };
 
-  // Fonction pour capturer l'état exact du canvas avec les caméras
+  // Fonction pour capturer l'état exact du canvas avec les caméras - optimisée
   const captureCanvas = async (): Promise<HTMLCanvasElement | null> => {
     return new Promise((resolve) => {
-      // Trouver le canvas du PDF et le canvas Konva
-      const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
-      const konvaCanvas = document.querySelector('.konvajs-content canvas');
-      
-      if (!pdfCanvas || !konvaCanvas) {
-        console.error('Canvas non trouvés');
+      // Limiter le temps d'attente à 2 secondes maximum
+      const timeout = setTimeout(() => {
+        console.warn('Capture du canvas timeout dépassé');
         resolve(null);
-        return;
-      }
-      
-      // Créer un canvas temporaire pour combiner les deux
-      const tempCanvas = document.createElement('canvas');
-      const ctx = tempCanvas.getContext('2d');
-      
-      if (!ctx) {
-        console.error('Impossible de créer un contexte 2D');
-        resolve(null);
-        return;
-      }
-      
-      // Définir les dimensions du canvas temporaire
-      tempCanvas.width = pdfCanvas.width;
-      tempCanvas.height = pdfCanvas.height;
-      
-      // Dessiner d'abord le PDF
-      ctx.drawImage(pdfCanvas, 0, 0);
-      
-      // Puis dessiner le canvas Konva par-dessus
-      ctx.drawImage(konvaCanvas, 0, 0);
-      
-      // Attendre un peu pour s'assurer que le rendu est terminé
-      setTimeout(() => {
+      }, 2000);
+
+      // Chercher les canvas
+      const findCanvases = () => {
+        const pdfCanvas = document.querySelector('canvas:not(.konvajs-content canvas)');
+        const konvaCanvas = document.querySelector('.konvajs-content canvas');
+        
+        if (!pdfCanvas || !konvaCanvas) {
+          console.error('Canvas non trouvés');
+          clearTimeout(timeout);
+          resolve(null);
+          return;
+        }
+        
+        // Créer un canvas temporaire pour combiner les deux
+        const tempCanvas = document.createElement('canvas');
+        const ctx = tempCanvas.getContext('2d');
+        
+        if (!ctx) {
+          console.error('Impossible de créer un contexte 2D');
+          clearTimeout(timeout);
+          resolve(null);
+          return;
+        }
+        
+        // Définir les dimensions du canvas temporaire
+        tempCanvas.width = pdfCanvas.width;
+        tempCanvas.height = pdfCanvas.height;
+        
+        // Dessiner d'abord le PDF
+        ctx.drawImage(pdfCanvas, 0, 0);
+        
+        // Puis dessiner le canvas Konva par-dessus
+        ctx.drawImage(konvaCanvas, 0, 0);
+        
+        clearTimeout(timeout);
         resolve(tempCanvas);
-      }, 100);
+      };
+
+      // Essayer de trouver les canvas immédiatement, puis réessayer après un délai
+      findCanvases();
+      // Réessayer une fois de plus après un court délai
+      setTimeout(findCanvases, 100);
     });
   };
 
@@ -626,7 +762,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Fonction pour exporter toutes les pages en un seul PDF
+  // Fonction pour exporter toutes les pages en un seul PDF - optimisée
   const exportPdf = async () => {
     console.log('Export de toutes les pages en un seul PDF');
     
@@ -663,10 +799,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         
         // Attendre que le rendu de la page soit terminé
         // Cette attente est cruciale pour que le PDF soit correctement rendu
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 500)); // Réduit à 500ms au lieu de 1000ms
         
-        // Capturer le canvas de cette page
-        const combinedCanvas = await captureCanvas();
+        // Capturer le canvas de cette page avec timeout
+        const capturePromise = captureCanvas();
+        const timeoutPromise = new Promise<HTMLCanvasElement | null>(resolve => {
+          setTimeout(() => {
+            console.warn(`Timeout de capture pour la page ${pageNum}`);
+            resolve(null);
+          }, 1500);
+        });
+        
+        const combinedCanvas = await Promise.race([capturePromise, timeoutPromise]);
         
         if (!combinedCanvas) {
           console.error(`Échec de la capture du canvas pour la page ${pageNum}`);

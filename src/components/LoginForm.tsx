@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Paper, 
@@ -51,7 +51,17 @@ const LoginForm: React.FC = () => {
   const [isResetMode, setIsResetMode] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [tabValue, setTabValue] = useState(0);
-  const { login, isSyncing } = useAppContext();
+  const [loginTimeout, setLoginTimeout] = useState<NodeJS.Timeout | null>(null);
+  const { login, isSyncing, syncError } = useAppContext();
+
+  // Annuler tout timeout en cours lors du démontage du composant
+  useEffect(() => {
+    return () => {
+      if (loginTimeout) {
+        clearTimeout(loginTimeout);
+      }
+    };
+  }, [loginTimeout]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -71,11 +81,22 @@ const LoginForm: React.FC = () => {
     setIsLoading(true);
     
     try {
+      // Démarrer un timeout pour afficher un message si ça prend trop de temps
+      const timeout = setTimeout(() => {
+        setError('La connexion prend plus de temps que prévu. Veuillez patienter...');
+      }, 5000);
+      
+      setLoginTimeout(timeout);
+      
       const success = await login(email, password);
+      
+      clearTimeout(timeout);
+      setLoginTimeout(null);
+      
       if (!success) {
         setError('Identifiants incorrects');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur lors de la connexion:', error);
       setError('Une erreur est survenue lors de la connexion');
     } finally {
@@ -106,7 +127,17 @@ const LoginForm: React.FC = () => {
     setIsLoading(true);
     
     try {
+      // Démarrer un timeout pour afficher un message si ça prend trop de temps
+      const timeout = setTimeout(() => {
+        setError('L\'inscription prend plus de temps que prévu. Veuillez patienter...');
+      }, 5000);
+      
+      setLoginTimeout(timeout);
+      
       const { user, error: signUpError } = await supabaseAuth.signUp(email, password);
+      
+      clearTimeout(timeout);
+      setLoginTimeout(null);
       
       if (signUpError) {
         throw signUpError;
@@ -145,10 +176,20 @@ const LoginForm: React.FC = () => {
     setIsLoading(true);
     
     try {
+      // Démarrer un timeout pour afficher un message si ça prend trop de temps
+      const timeout = setTimeout(() => {
+        setError('La réinitialisation prend plus de temps que prévu. Veuillez patienter...');
+      }, 5000);
+      
+      setLoginTimeout(timeout);
+      
       // Appeler la fonction de réinitialisation du mot de passe de Supabase
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
+      
+      clearTimeout(timeout);
+      setLoginTimeout(null);
       
       if (error) {
         throw error;
@@ -160,6 +201,14 @@ const LoginForm: React.FC = () => {
       setError('Une erreur est survenue lors de l\'envoi de l\'email de réinitialisation');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Définir des valeurs par défaut pour faciliter les tests
+  const fillTestCredentials = () => {
+    if (process.env.NODE_ENV !== 'production') {
+      setEmail('admin@plancam.com');
+      setPassword('Dali');
     }
   };
 
@@ -201,6 +250,12 @@ const LoginForm: React.FC = () => {
         {error && (
           <Alert severity="error" sx={{ mb: 3 }}>
             {error}
+          </Alert>
+        )}
+        
+        {syncError && !error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {syncError}
           </Alert>
         )}
         
@@ -301,7 +356,7 @@ const LoginForm: React.FC = () => {
                   {isLoading ? <CircularProgress size={24} /> : 'Se connecter'}
                 </Button>
                 
-                <Box sx={{ mt: 2, textAlign: 'center' }}>
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Link 
                     component="button" 
                     variant="body2" 
@@ -310,6 +365,19 @@ const LoginForm: React.FC = () => {
                   >
                     Mot de passe oublié ?
                   </Link>
+                  
+                  {process.env.NODE_ENV !== 'production' && (
+                    <Link 
+                      component="button" 
+                      variant="body2" 
+                      onClick={fillTestCredentials}
+                      underline="hover"
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      Remplir test
+                    </Link>
+                  )}
+                                  )}
                 </Box>
               </Box>
             </TabPanel>
